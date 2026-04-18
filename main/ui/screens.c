@@ -38,8 +38,16 @@ void create_screen_main() {
             // album_art
             lv_obj_t *obj = lv_img_create(parent_obj);
             objects.album_art = obj;
+            lv_obj_set_pos(obj, 60, 60);
+            lv_obj_set_size(obj, 240, 240);
+        }
+        {
+            // song_time1
+            lv_obj_t *obj = lv_arc_create(parent_obj);
+            objects.song_time1 = obj;
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, 360, 360);
+            lv_arc_set_value(obj, 25);
         }
     }
     
@@ -47,6 +55,29 @@ void create_screen_main() {
 }
 
 void tick_screen_main() {
+}
+
+void create_screen_information() {
+    lv_obj_t *obj = lv_obj_create(0);
+    objects.information = obj;
+    lv_obj_set_pos(obj, 0, 0);
+    lv_obj_set_size(obj, 360, 360);
+    {
+        lv_obj_t *parent_obj = obj;
+        {
+            // song_time2
+            lv_obj_t *obj = lv_arc_create(parent_obj);
+            objects.song_time2 = obj;
+            lv_obj_set_pos(obj, 0, 0);
+            lv_obj_set_size(obj, 360, 360);
+            lv_arc_set_value(obj, 25);
+        }
+    }
+    
+    tick_screen_information();
+}
+
+void tick_screen_information() {
 }
 
 void create_screen_wifi() {
@@ -142,10 +173,11 @@ void tick_screen_wifi() {
 typedef void (*tick_screen_func_t)();
 tick_screen_func_t tick_screen_funcs[] = {
     tick_screen_main,
+    tick_screen_information,
     tick_screen_wifi,
 };
 void tick_screen(int screen_index) {
-    if (screen_index >= 0 && screen_index < 2) {
+    if (screen_index >= 0 && screen_index < 3) {
         tick_screen_funcs[screen_index]();
     }
 }
@@ -243,5 +275,6 @@ void create_screens() {
     // Initialize screens
     // Create screens
     create_screen_main();
+    create_screen_information();
     create_screen_wifi();
 }

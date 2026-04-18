@@ -3,7 +3,6 @@ idf_component_register(
         "main.c"
         "wifi_sta_ui.c"
         "ytmd_client.c"
-        "tjpgd.c"
         "ui/images.c"
         "ui/screens.c"
         "ui/styles.c"
@@ -20,5 +19,6 @@ idf_component_register(
         esp_netif
         esp_timer
         esp_wifi
+        esp_new_jpeg
         lvgl
         nvs_flash)

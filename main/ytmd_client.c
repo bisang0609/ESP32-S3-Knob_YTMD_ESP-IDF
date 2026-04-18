@@ -1,7 +1,7 @@
 #include "ytmd_client.h"
 #include "lvgl_lock.h"
 #include "ui/screens.h"
-#include "tjpgd.h"
+#include "esp_jpeg_dec.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -30,7 +30,6 @@ static const char *TAG = "ytmd";
 
 #define JPEG_DL_MAX   (BUF_SCALE_X2 * 512 * 1024)
 #define RESP_BUF_MAX  (BUF_SCALE_X2 * 4096)
-#define TJPGD_POOL_SZ (BUF_SCALE_X2 * 3500)
 
 /* Persistent decoded pixel buffer (RGB565, 360x360) */
 static uint8_t *s_art_buf = NULL;
@@ -51,95 +50,136 @@ static int  s_resp_len = 0;
 /* JPEG decoder                                                         */
 /* ------------------------------------------------------------------ */
 
-typedef struct {
-    const uint8_t *src;
-    int            src_len;
-    int            src_pos;
-    uint16_t      *dst;
-    int            dst_w;
-    int            dst_h;
-    int            src_w;   /* tjpgd decoded width  (after scale) */
-    int            src_h;   /* tjpgd decoded height (after scale) */
-} jpg_ctx_t;
-
-static size_t jpg_infunc(JDEC *jd, uint8_t *buf, size_t nb)
+static void resize_rgb565_le_to_art(const uint8_t *src_buf, int src_w, int src_h, uint8_t *dst_buf)
 {
-    jpg_ctx_t *ctx = (jpg_ctx_t *)jd->device;
-    int avail = ctx->src_len - ctx->src_pos;
-    if (avail <= 0) return 0;
-    if ((int)nb > avail) nb = (size_t)avail;
-    if (buf) memcpy(buf, ctx->src + ctx->src_pos, nb);
-    ctx->src_pos += (int)nb;
-    return nb;
-}
+    if (!src_buf || !dst_buf || src_w <= 0 || src_h <= 0) {
+        return;
+    }
 
-static int jpg_outfunc(JDEC *jd, void *data, JRECT *rect)
-{
-    jpg_ctx_t *ctx = (jpg_ctx_t *)jd->device;
-    uint16_t  *src = (uint16_t *)data;
+    const uint16_t *src = (const uint16_t *)src_buf;
+    uint16_t *dst = (uint16_t *)dst_buf;
 
-    for (int y = rect->top; y <= (int)rect->bottom; y++) {
-        for (int x = rect->left; x <= (int)rect->right; x++) {
-            /* Nearest-neighbor scale: map tjpgd output coords → dst coords */
-            int dx = x * ctx->dst_w / ctx->src_w;
-            int dy = y * ctx->dst_h / ctx->src_h;
-            if ((unsigned)dx < (unsigned)ctx->dst_w &&
-                (unsigned)dy < (unsigned)ctx->dst_h) {
-                uint16_t px = *src;
-                /* Byte-swap for LV_COLOR_16_SWAP */
-                ctx->dst[dy * ctx->dst_w + dx] = (px << 8) | (px >> 8);
-            }
-            src++;
+    for (int y = 0; y < ART_H; y++) {
+        int sy = (y * src_h) / ART_H;
+        if (sy >= src_h) sy = src_h - 1;
+
+        for (int x = 0; x < ART_W; x++) {
+            int sx = (x * src_w) / ART_W;
+            if (sx >= src_w) sx = src_w - 1;
+
+            uint16_t px = src[sy * src_w + sx];
+            /* Byte-swap for LV_COLOR_16_SWAP */
+            dst[y * ART_W + x] = (uint16_t)((px << 8) | (px >> 8));
         }
     }
-    return 1; /* continue */
 }
 
 static bool decode_jpeg(const uint8_t *jpeg, int jpeg_len, uint8_t *out_rgb565)
 {
-    static uint8_t pool[TJPGD_POOL_SZ];
-    JDEC jd;
-    jpg_ctx_t ctx = {
-        .src     = jpeg,
-        .src_len = jpeg_len,
-        .src_pos = 0,
-        .dst     = (uint16_t *)out_rgb565,
-        .dst_w   = ART_W,
-        .dst_h   = ART_H,
-    };
-
-    JRESULT res = jd_prepare(&jd, jpg_infunc, pool, sizeof(pool), &ctx);
-    if (res != JDR_OK) {
-        ESP_LOGE(TAG, "jd_prepare: %d", res);
+    if (!jpeg || jpeg_len <= 0 || !out_rgb565) {
         return false;
     }
-
-    /* Pick largest tjpgd scale that still covers ART_W x ART_H.
-       Then nearest-neighbor downscale to exactly ART_W x ART_H in outfunc. */
-    uint8_t scale = 0;
-    while (scale < 3) {
-        int nw = (int)(jd.width  >> (scale + 1));
-        int nh = (int)(jd.height >> (scale + 1));
-        if (nw < ART_W || nh < ART_H) break;
-        scale++;
-    }
-
-    int out_w = (int)(jd.width  >> scale);
-    int out_h = (int)(jd.height >> scale);
-    ctx.src_w = out_w;
-    ctx.src_h = out_h;
 
     memset(out_rgb565, 0, ART_BUF_SIZE);
 
-    res = jd_decomp(&jd, jpg_outfunc, scale);
-    if (res != JDR_OK) {
-        ESP_LOGE(TAG, "jd_decomp: %d (img %dx%d scale=%d)", res, jd.width, jd.height, scale);
+    jpeg_error_t err = JPEG_ERR_OK;
+    jpeg_dec_handle_t jpeg_dec = NULL;
+    uint8_t *decode_buf = NULL;
+    jpeg_dec_io_t io = {
+        .inbuf = (uint8_t *)jpeg,
+        .inbuf_len = jpeg_len,
+    };
+    jpeg_dec_header_info_t out_info = {0};
+
+    /* Pass 1: parse source dimensions to decide optional pre-scale */
+    jpeg_dec_config_t cfg_probe = DEFAULT_JPEG_DEC_CONFIG();
+    cfg_probe.output_type = JPEG_PIXEL_FORMAT_RGB565_LE;
+    err = jpeg_dec_open(&cfg_probe, &jpeg_dec);
+    if (err != JPEG_ERR_OK) {
+        ESP_LOGE(TAG, "jpeg_dec_open(probe): %d", err);
         return false;
     }
 
-    ESP_LOGI(TAG, "JPEG decoded %dx%d -> %dx%d -> %dx%d (scale=%d)",
-             jd.width, jd.height, out_w, out_h, ART_W, ART_H, scale);
+    err = jpeg_dec_parse_header(jpeg_dec, &io, &out_info);
+    if (err != JPEG_ERR_OK) {
+        ESP_LOGE(TAG, "jpeg_dec_parse_header(probe): %d", err);
+        jpeg_dec_close(jpeg_dec);
+        return false;
+    }
+    int src_w = out_info.width;
+    int src_h = out_info.height;
+    jpeg_dec_close(jpeg_dec);
+    jpeg_dec = NULL;
+
+    int scale_w = ART_W;
+    int scale_h = ART_H;
+    bool target_aligned = ((ART_W & 0x7) == 0) && ((ART_H & 0x7) == 0);
+    bool within_ratio_limit = (src_w <= (ART_W * 8)) && (src_h <= (ART_H * 8));
+    bool use_scale = target_aligned &&
+                     within_ratio_limit &&
+                     (src_w >= ART_W) &&
+                     (src_h >= ART_H);
+
+    /* Pass 2: decode */
+    jpeg_dec_config_t cfg = DEFAULT_JPEG_DEC_CONFIG();
+    cfg.output_type = JPEG_PIXEL_FORMAT_RGB565_LE;
+    if (use_scale) {
+        cfg.scale.width = (uint16_t)scale_w;
+        cfg.scale.height = (uint16_t)scale_h;
+    }
+
+    err = jpeg_dec_open(&cfg, &jpeg_dec);
+    if (err != JPEG_ERR_OK) {
+        ESP_LOGE(TAG, "jpeg_dec_open: %d", err);
+        return false;
+    }
+
+    io.inbuf = (uint8_t *)jpeg;
+    io.inbuf_len = jpeg_len;
+    err = jpeg_dec_parse_header(jpeg_dec, &io, &out_info);
+    if (err != JPEG_ERR_OK) {
+        ESP_LOGE(TAG, "jpeg_dec_parse_header: %d", err);
+        goto fail;
+    }
+
+    int outbuf_len = 0;
+    err = jpeg_dec_get_outbuf_len(jpeg_dec, &outbuf_len);
+    if (err != JPEG_ERR_OK || outbuf_len <= 0) {
+        ESP_LOGE(TAG, "jpeg_dec_get_outbuf_len: %d", err);
+        goto fail;
+    }
+
+    decode_buf = (uint8_t *)jpeg_calloc_align((size_t)outbuf_len, 16);
+    if (!decode_buf) {
+        ESP_LOGE(TAG, "jpeg_calloc_align failed (%d bytes)", outbuf_len);
+        goto fail;
+    }
+
+    io.outbuf = decode_buf;
+    err = jpeg_dec_process(jpeg_dec, &io);
+    if (err != JPEG_ERR_OK) {
+        ESP_LOGE(TAG, "jpeg_dec_process: %d", err);
+        goto fail;
+    }
+
+    resize_rgb565_le_to_art(decode_buf, out_info.width, out_info.height, out_rgb565);
+
+    ESP_LOGI(TAG, "JPEG decoded %dx%d -> %dx%d -> %dx%d (esp_new_jpeg, scale=%s)",
+             src_w, src_h, out_info.width, out_info.height, ART_W, ART_H,
+             use_scale ? "on" : "off");
+
+    jpeg_free_align(decode_buf);
+    jpeg_dec_close(jpeg_dec);
     return true;
+
+fail:
+    if (decode_buf) {
+        jpeg_free_align(decode_buf);
+    }
+    if (jpeg_dec) {
+        jpeg_dec_close(jpeg_dec);
+    }
+    return false;
 }
 
 /* ------------------------------------------------------------------ */
@@ -253,7 +293,7 @@ static bool json_str(const char *json, const char *key,
     while ((p = strstr(p, needle)) != NULL) {
         p += strlen(needle);
         while (*p == ' ' || *p == '\t') p++;
-        if (*p != ':') continue;           /* key without colon – skip */
+        if (*p != ':') continue;           /* key without colon, skip */
         p++;
         while (*p == ' ' || *p == '\t') p++;
         if (*p != '"') continue;           /* value is not a string */
@@ -399,7 +439,7 @@ static void ytmd_task(void *arg)
     s_art_buf = heap_caps_malloc(ART_BUF_SIZE, MALLOC_CAP_SPIRAM);
     s_dl_buf  = heap_caps_malloc(JPEG_DL_MAX,  MALLOC_CAP_SPIRAM);
     if (!s_art_buf || !s_dl_buf) {
-        ESP_LOGE(TAG, "Cannot alloc buffers (art=%d dl=%d) spiram_free=%d – task exiting",
+        ESP_LOGE(TAG, "Cannot alloc buffers (art=%d dl=%d) spiram_free=%d task exiting",
                  ART_BUF_SIZE, JPEG_DL_MAX, (int)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
         vTaskDelete(NULL);
         return;
@@ -415,7 +455,7 @@ static void ytmd_task(void *arg)
     while (!poll_ytmd()) {
         vTaskDelay(pdMS_TO_TICKS(CONNECT_RETRY_MS));
     }
-    ESP_LOGI(TAG, "YTMD connected – system started");
+    ESP_LOGI(TAG, "YTMD connected - system started");
 
     char new_id[64];
     char new_art[512];
