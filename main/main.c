@@ -407,9 +407,6 @@ static void ui_update_from_wifi(void)
     }
 
     if (lvgl_lock(-1)) {
-        ui_set_wifi_status_text(snapshot.wifi_status);
-        ui_set_ip_address_text(snapshot.ip_address);
-        ui_set_retry_count_text(snapshot.retry_count);
         ui_tick();
         lvgl_unlock();
     }

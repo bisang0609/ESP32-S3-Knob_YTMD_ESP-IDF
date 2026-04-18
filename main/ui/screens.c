@@ -30,47 +30,16 @@ void create_screen_main() {
     {
         lv_obj_t *parent_obj = obj;
         {
-            // wifi_status
-            lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.wifi_status = obj;
-            lv_obj_set_pos(obj, 158, 8);
-            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-            lv_label_set_text_static(obj, "status");
-        }
-        {
-            // ip_address
-            lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.ip_address = obj;
-            lv_obj_set_pos(obj, 103, 33);
-            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-            lv_label_set_text_static(obj, "ip_address");
-        }
-        {
-            // Retry
-            lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.retry = obj;
-            lv_obj_set_pos(obj, 219, 33);
-            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-            lv_label_set_text_static(obj, "Retry");
-        }
-        {
             lv_obj_t *obj = lv_obj_create(parent_obj);
-            lv_obj_set_pos(obj, 60, 60);
-            lv_obj_set_size(obj, 240, 240);
-            lv_obj_set_style_pad_left(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_pad_top(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_pad_right(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_pad_bottom(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_bg_opa(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_border_width(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_radius(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_pos(obj, 0, 0);
+            lv_obj_set_size(obj, 360, 360);
         }
         {
             // album_art
             lv_obj_t *obj = lv_img_create(parent_obj);
             objects.album_art = obj;
-            lv_obj_set_pos(obj, 60, 60);
-            lv_obj_set_size(obj, 240, 240);
+            lv_obj_set_pos(obj, 0, 0);
+            lv_obj_set_size(obj, 360, 360);
         }
     }
     
@@ -80,12 +49,103 @@ void create_screen_main() {
 void tick_screen_main() {
 }
 
+void create_screen_wifi() {
+    lv_obj_t *obj = lv_obj_create(0);
+    objects.wifi = obj;
+    lv_obj_set_pos(obj, 0, 0);
+    lv_obj_set_size(obj, 360, 360);
+    {
+        lv_obj_t *parent_obj = obj;
+        {
+            // SSID
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.ssid = obj;
+            lv_obj_set_pos(obj, 97, 65);
+            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_label_set_text_static(obj, "SSID");
+        }
+        {
+            // ssid_name
+            lv_obj_t *obj = lv_textarea_create(parent_obj);
+            objects.ssid_name = obj;
+            lv_obj_set_pos(obj, 147, 61);
+            lv_obj_set_size(obj, 150, 24);
+            lv_textarea_set_max_length(obj, 128);
+            lv_textarea_set_text(obj, "YeoSangMin_2G");
+            lv_textarea_set_one_line(obj, false);
+            lv_textarea_set_password_mode(obj, false);
+            lv_obj_clear_flag(obj, LV_OBJ_FLAG_GESTURE_BUBBLE|LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM|LV_OBJ_FLAG_SCROLL_ON_FOCUS|LV_OBJ_FLAG_SCROLL_WITH_ARROW|LV_OBJ_FLAG_SNAPPABLE);
+            lv_obj_set_style_pad_top(obj, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
+        }
+        {
+            // taget_ip
+            lv_obj_t *obj = lv_textarea_create(parent_obj);
+            objects.taget_ip = obj;
+            lv_obj_set_pos(obj, 147, 102);
+            lv_obj_set_size(obj, 150, 24);
+            lv_textarea_set_max_length(obj, 128);
+            lv_textarea_set_text(obj, "192.168.0.30");
+            lv_textarea_set_one_line(obj, false);
+            lv_textarea_set_password_mode(obj, false);
+            lv_obj_set_style_pad_top(obj, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
+        }
+        {
+            // YTMD_IP
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.ytmd_ip = obj;
+            lv_obj_set_pos(obj, 69, 106);
+            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_label_set_text_static(obj, "YTMD_IP");
+        }
+        {
+            // keboard
+            lv_obj_t *obj = lv_keyboard_create(parent_obj);
+            objects.keboard = obj;
+            lv_obj_set_pos(obj, 31, 168);
+            lv_obj_set_size(obj, 300, 120);
+            lv_obj_set_style_align(obj, LV_ALIGN_DEFAULT, LV_PART_MAIN | LV_STATE_DEFAULT);
+        }
+        {
+            // connect_btn
+            lv_obj_t *obj = lv_btn_create(parent_obj);
+            objects.connect_btn = obj;
+            lv_obj_set_pos(obj, 110, 140);
+            lv_obj_set_size(obj, 141, 28);
+            {
+                lv_obj_t *parent_obj = obj;
+                {
+                    lv_obj_t *obj = lv_label_create(parent_obj);
+                    lv_obj_set_pos(obj, 0, 0);
+                    lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+                    lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+                    lv_label_set_text_static(obj, "Button");
+                }
+            }
+        }
+        {
+            // Saved Connections
+            lv_obj_t *obj = lv_obj_create(parent_obj);
+            objects.saved_connections = obj;
+            lv_obj_set_pos(obj, 64, 180);
+            lv_obj_set_size(obj, 233, 140);
+        }
+    }
+    
+    tick_screen_wifi();
+}
+
+void tick_screen_wifi() {
+}
+
 typedef void (*tick_screen_func_t)();
 tick_screen_func_t tick_screen_funcs[] = {
     tick_screen_main,
+    tick_screen_wifi,
 };
 void tick_screen(int screen_index) {
-    if (screen_index >= 0 && screen_index < 1) {
+    if (screen_index >= 0 && screen_index < 2) {
         tick_screen_funcs[screen_index]();
     }
 }
@@ -183,4 +243,5 @@ void create_screens() {
     // Initialize screens
     // Create screens
     create_screen_main();
+    create_screen_wifi();
 }

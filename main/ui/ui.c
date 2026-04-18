@@ -5,8 +5,6 @@
 #include "vars.h"
 
 #include <string.h>
-#include <inttypes.h>
-#include <stdio.h>
 
 static int16_t currentScreen = -1;
 
@@ -31,20 +29,4 @@ void ui_init() {
 
 void ui_tick() {
     tick_screen(currentScreen);
-}
-
-void ui_set_wifi_status_text(const char *text) {
-    if (objects.wifi_status) lv_label_set_text(objects.wifi_status, text);
-}
-
-void ui_set_ip_address_text(const char *text) {
-    if (objects.ip_address) lv_label_set_text(objects.ip_address, text);
-}
-
-void ui_set_retry_count_text(uint32_t count) {
-    if (objects.retry) {
-        char buf[16];
-        snprintf(buf, sizeof(buf), "%" PRIu32, count);
-        lv_label_set_text(objects.retry, buf);
-    }
 }

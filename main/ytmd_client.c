@@ -22,15 +22,17 @@ static const char *TAG = "ytmd";
 #define POLL_INTERVAL_MS 2000
 #define CONNECT_RETRY_MS 3000
 
-#define ART_W  240
-#define ART_H  240
+#define ART_W  360
+#define ART_H  360
 #define ART_BUF_SIZE (ART_W * ART_H * 2)
 
-#define JPEG_DL_MAX   (512 * 1024)
-#define RESP_BUF_MAX  4096
-#define TJPGD_POOL_SZ 3500
+#define BUF_SCALE_X2  2
 
-/* Persistent decoded pixel buffer (RGB565, 240x240) */
+#define JPEG_DL_MAX   (BUF_SCALE_X2 * 512 * 1024)
+#define RESP_BUF_MAX  (BUF_SCALE_X2 * 4096)
+#define TJPGD_POOL_SZ (BUF_SCALE_X2 * 3500)
+
+/* Persistent decoded pixel buffer (RGB565, 360x360) */
 static uint8_t *s_art_buf = NULL;
 static lv_img_dsc_t s_art_dsc;
 
@@ -180,7 +182,7 @@ static bool download_art(const char *url)
         .url           = http_url,
         .event_handler = dl_event_handler,
         .timeout_ms    = 8000,
-        .buffer_size   = 4096,
+        .buffer_size   = 8192,
     };
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
     if (!client) return false;

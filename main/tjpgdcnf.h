@@ -3,7 +3,7 @@
 /* Modified for project: RGB565, 32-bit MCU     */
 /*----------------------------------------------*/
 
-#define JD_SZBUF        512
+#define JD_SZBUF        1024
 
 #define JD_FORMAT       1
 /* 0: RGB888, 1: RGB565 (LE), 2: Grayscale */
