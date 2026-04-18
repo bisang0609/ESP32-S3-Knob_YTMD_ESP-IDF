@@ -1,0 +1,21 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "wifi_sta_ui.c"
+        "ui/images.c"
+        "ui/screens.c"
+        "ui/styles.c"
+        "ui/ui.c"
+    INCLUDE_DIRS
+        "."
+        "ui"
+    REQUIRES
+        driver
+        esp_driver_ledc
+        esp_lcd
+        esp_event
+        esp_netif
+        esp_timer
+        esp_wifi
+        lvgl
+        nvs_flash)

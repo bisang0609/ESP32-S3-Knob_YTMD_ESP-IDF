@@ -1,0 +1,18 @@
+{
+  "C_Cpp.intelliSenseEngine": "default",
+  "idf.openOcdConfigs": [
+    "board/esp32s3-builtin.cfg"
+  ],
+  "idf.portWin": "COM9",
+  "idf.currentSetup": "C:\\esp\\v6.0\\esp-idf",
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32s3"
+  },
+  "clangd.path": "C:\\Espressif\\tools\\esp-clang\\esp-20.1.1_20250829\\esp-clang\\bin\\clangd.exe",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=k:\\0000.ESP32_Program\\1.ESP32C3\\0.Source\\ESP32-S3-Knob_YTMD_ESP-IDF\\build"
+  ],
+  "idf.flashType": "UART"
+}
