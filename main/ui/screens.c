@@ -41,43 +41,12 @@ void create_screen_main() {
             lv_obj_set_pos(obj, 60, 60);
             lv_obj_set_size(obj, 240, 240);
         }
-        {
-            // song_time1
-            lv_obj_t *obj = lv_arc_create(parent_obj);
-            objects.song_time1 = obj;
-            lv_obj_set_pos(obj, 0, 0);
-            lv_obj_set_size(obj, 360, 360);
-            lv_arc_set_value(obj, 25);
-        }
     }
     
     tick_screen_main();
 }
 
 void tick_screen_main() {
-}
-
-void create_screen_information() {
-    lv_obj_t *obj = lv_obj_create(0);
-    objects.information = obj;
-    lv_obj_set_pos(obj, 0, 0);
-    lv_obj_set_size(obj, 360, 360);
-    {
-        lv_obj_t *parent_obj = obj;
-        {
-            // song_time2
-            lv_obj_t *obj = lv_arc_create(parent_obj);
-            objects.song_time2 = obj;
-            lv_obj_set_pos(obj, 0, 0);
-            lv_obj_set_size(obj, 360, 360);
-            lv_arc_set_value(obj, 25);
-        }
-    }
-    
-    tick_screen_information();
-}
-
-void tick_screen_information() {
 }
 
 void create_screen_wifi() {
@@ -170,11 +139,36 @@ void create_screen_wifi() {
 void tick_screen_wifi() {
 }
 
+void create_screen_information() {
+    lv_obj_t *obj = lv_obj_create(0);
+    objects.information = obj;
+    lv_obj_set_pos(obj, 0, 0);
+    lv_obj_set_size(obj, 360, 360);
+    {
+        lv_obj_t *parent_obj = obj;
+        {
+            lv_obj_t *obj = lv_obj_create(parent_obj);
+            lv_obj_set_pos(obj, 80, 42);
+            lv_obj_set_size(obj, 200, 200);
+        }
+        {
+            lv_obj_t *obj = lv_spinner_create(parent_obj, 1000, 60);
+            lv_obj_set_pos(obj, 0, 0);
+            lv_obj_set_size(obj, 360, 360);
+        }
+    }
+    
+    tick_screen_information();
+}
+
+void tick_screen_information() {
+}
+
 typedef void (*tick_screen_func_t)();
 tick_screen_func_t tick_screen_funcs[] = {
     tick_screen_main,
-    tick_screen_information,
     tick_screen_wifi,
+    tick_screen_information,
 };
 void tick_screen(int screen_index) {
     if (screen_index >= 0 && screen_index < 3) {
@@ -190,6 +184,10 @@ void tick_screen_by_id(enum ScreensEnum screenId) {
 //
 
 ext_font_desc_t fonts[] = {
+    { "Font_KOR_16", &ui_font_font_kor_16 },
+    { "Font_KOR_14", &ui_font_font_kor_14 },
+    { "Font_JP_16", &ui_font_font_jp_16 },
+    { "Font_JP_14", &ui_font_font_jp_14 },
 #if LV_FONT_MONTSERRAT_8
     { "MONTSERRAT_8", &lv_font_montserrat_8 },
 #endif
@@ -275,6 +273,6 @@ void create_screens() {
     // Initialize screens
     // Create screens
     create_screen_main();
-    create_screen_information();
     create_screen_wifi();
+    create_screen_information();
 }

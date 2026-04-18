@@ -11,6 +11,10 @@
     "styles.h",
     "ui.c",
     "ui.h",
+    "ui_font_font_jp_14.c",
+    "ui_font_font_jp_16.c",
+    "ui_font_font_kor_14.c",
+    "ui_font_font_kor_16.c",
     "vars.h"
   ]
 }
