@@ -12,6 +12,24 @@
 
 objects_t objects;
 
+// Global state variables
+
+static lv_anim_t anim;
+static bool anim_initialized;
+
+//
+// Helper functions
+//
+
+lv_anim_t *get_anim() {
+    if (!anim_initialized) {
+        lv_anim_init(&anim);
+        lv_anim_set_delay(&anim, 1000);
+        anim_initialized = true;
+    }
+    return &anim;
+}
+
 //
 // Event handlers
 //
@@ -21,33 +39,6 @@ lv_obj_t *tick_value_change_obj;
 //
 // Screens
 //
-
-void create_screen_main() {
-    lv_obj_t *obj = lv_obj_create(0);
-    objects.main = obj;
-    lv_obj_set_pos(obj, 0, 0);
-    lv_obj_set_size(obj, 360, 360);
-    {
-        lv_obj_t *parent_obj = obj;
-        {
-            lv_obj_t *obj = lv_obj_create(parent_obj);
-            lv_obj_set_pos(obj, 0, 0);
-            lv_obj_set_size(obj, 360, 360);
-        }
-        {
-            // album_art
-            lv_obj_t *obj = lv_img_create(parent_obj);
-            objects.album_art = obj;
-            lv_obj_set_pos(obj, 60, 60);
-            lv_obj_set_size(obj, 240, 240);
-        }
-    }
-    
-    tick_screen_main();
-}
-
-void tick_screen_main() {
-}
 
 void create_screen_wifi() {
     lv_obj_t *obj = lv_obj_create(0);
@@ -139,6 +130,61 @@ void create_screen_wifi() {
 void tick_screen_wifi() {
 }
 
+void create_screen_main() {
+    lv_obj_t *obj = lv_obj_create(0);
+    objects.main = obj;
+    lv_obj_set_pos(obj, 0, 0);
+    lv_obj_set_size(obj, 360, 360);
+    {
+        lv_obj_t *parent_obj = obj;
+        {
+            lv_obj_t *obj = lv_obj_create(parent_obj);
+            lv_obj_set_pos(obj, 0, 0);
+            lv_obj_set_size(obj, 360, 360);
+        }
+        {
+            // album_art
+            lv_obj_t *obj = lv_img_create(parent_obj);
+            objects.album_art = obj;
+            lv_obj_set_pos(obj, 0, 0);
+            lv_obj_set_size(obj, 360, 360);
+        }
+        {
+            // loading_spinner (boot / Wi-Fi / DHCP wait)
+            lv_obj_t *obj = lv_spinner_create(parent_obj, 1000, 60);
+            objects.loading_spinner = obj;
+            lv_obj_set_pos(obj, 0, 0);
+            lv_obj_set_size(obj, 360, 360);
+            lv_obj_clear_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_set_style_arc_color(obj, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_arc_color(obj, lv_color_hex(0xFFFFFF), LV_PART_INDICATOR | LV_STATE_DEFAULT);
+            lv_obj_set_style_arc_opa(obj, LV_OPA_50, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_arc_opa(obj, LV_OPA_COVER, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+        }
+        {
+            // loadingbar (album-art download progress)
+            lv_obj_t *obj = lv_arc_create(parent_obj);
+            objects.loadingbar = obj;
+            lv_obj_set_pos(obj, 0, 0);
+            lv_obj_set_size(obj, 360, 360);
+            lv_arc_set_range(obj, 0, 100);
+            lv_arc_set_value(obj, 0);
+            lv_arc_set_rotation(obj, 270);
+            lv_arc_set_bg_angles(obj, 0, 360);
+            lv_obj_remove_style(obj, NULL, LV_PART_KNOB);
+            lv_obj_clear_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_set_style_arc_rounded(obj, false, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_arc_rounded(obj, false, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+            lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    
+    tick_screen_main();
+}
+
+void tick_screen_main() {
+}
+
 void create_screen_information() {
     lv_obj_t *obj = lv_obj_create(0);
     objects.information = obj;
@@ -150,11 +196,55 @@ void create_screen_information() {
             lv_obj_t *obj = lv_obj_create(parent_obj);
             lv_obj_set_pos(obj, 80, 42);
             lv_obj_set_size(obj, 200, 200);
+            lv_obj_set_style_pad_all(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_border_width(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_radius(obj, 18, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_clip_corner(obj, true, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_OFF);
+
+            // art2
+            lv_obj_t *img = lv_img_create(obj);
+            objects.art2 = img;
+            lv_obj_set_pos(img, 0, 0);
+            lv_obj_set_size(img, 200, 200);
         }
         {
-            lv_obj_t *obj = lv_spinner_create(parent_obj, 1000, 60);
+            // seek
+            lv_obj_t *obj = lv_arc_create(parent_obj);
+            objects.seek = obj;
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, 360, 360);
+            lv_arc_set_value(obj, 25);
+            lv_obj_set_style_arc_rounded(obj, false, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_arc_rounded(obj, false, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+        }
+        {
+            // title
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.title = obj;
+            lv_obj_set_pos(obj, 80, 242);
+            lv_obj_set_size(obj, 200, LV_SIZE_CONTENT);
+            lv_label_set_long_mode(obj, LV_LABEL_LONG_SCROLL_CIRCULAR);
+            lv_obj_set_style_text_font(obj, &ui_font_font_kor_16, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_anim(obj, get_anim(), LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_anim_time(obj, 50000, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_anim_speed(obj, 20, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text_static(obj, "음악제목이 나오는 곳입니다~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+        }
+        {
+            // artist
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.artist = obj;
+            lv_obj_set_pos(obj, 80, 273);
+            lv_obj_set_size(obj, 200, LV_SIZE_CONTENT);
+            lv_label_set_long_mode(obj, LV_LABEL_LONG_SCROLL_CIRCULAR);
+            lv_obj_set_style_text_font(obj, &ui_font_font_kor_14, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_anim(obj, get_anim(), LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_anim_time(obj, 50000, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_anim_speed(obj, 20, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text_static(obj, "가수나오는 입니다~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
         }
     }
     
@@ -166,8 +256,8 @@ void tick_screen_information() {
 
 typedef void (*tick_screen_func_t)();
 tick_screen_func_t tick_screen_funcs[] = {
-    tick_screen_main,
     tick_screen_wifi,
+    tick_screen_main,
     tick_screen_information,
 };
 void tick_screen(int screen_index) {
@@ -272,7 +362,7 @@ void create_screens() {
     
     // Initialize screens
     // Create screens
-    create_screen_main();
     create_screen_wifi();
+    create_screen_main();
     create_screen_information();
 }

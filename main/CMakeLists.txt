@@ -7,6 +7,10 @@ idf_component_register(
         "ui/screens.c"
         "ui/styles.c"
         "ui/ui.c"
+        "ui/ui_font_font_jp_14.c"
+        "ui/ui_font_font_jp_16.c"
+        "ui/ui_font_font_kor_14.c"
+        "ui/ui_font_font_kor_16.c"
     INCLUDE_DIRS
         "."
         "ui"

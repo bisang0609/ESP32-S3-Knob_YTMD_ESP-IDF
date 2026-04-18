@@ -13,6 +13,7 @@ void ui_init();
 void ui_tick();
 
 void loadScreen(enum ScreensEnum screenId);
+void ui_swipe_to_dir(lv_dir_t dir);
 
 #ifdef __cplusplus
 }

@@ -16,6 +16,7 @@
 #define WIFI_SSID "YeoSangMin_2G"
 #define WIFI_PASS "min1596321"
 #define WIFI_START_CONNECT_DELAY_US (2500 * 1000)
+#define WIFI_RETRY_DELAY_US         (5000 * 1000)
 
 static const char *TAG = "wifi_sta_ui";
 
@@ -25,10 +26,13 @@ static bool s_state_dirty;
 
 static esp_event_handler_instance_t s_wifi_event_instance;
 static esp_event_handler_instance_t s_ip_event_instance;
-static esp_timer_handle_t s_connect_timer;
+static esp_timer_handle_t s_start_connect_timer;
+static esp_timer_handle_t s_retry_connect_timer;
 
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
-static void connect_timer_cb(void *arg);
+static void start_connect_timer_cb(void *arg);
+static void retry_connect_timer_cb(void *arg);
+static void schedule_retry_connect(void);
 
 static void state_lock(void)
 {
@@ -82,7 +86,7 @@ static esp_err_t nvs_init_safe(void)
     return ret;
 }
 
-static void connect_timer_cb(void *arg)
+static void start_connect_timer_cb(void *arg)
 {
     (void)arg;
 
@@ -94,6 +98,36 @@ static void connect_timer_cb(void *arg)
     }
 }
 
+static void retry_connect_timer_cb(void *arg)
+{
+    (void)arg;
+
+    state_set_status("Retrying...");
+    esp_err_t ret = esp_wifi_connect();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "esp_wifi_connect failed from retry timer: %s", esp_err_to_name(ret));
+        state_set_status("Retry request failed");
+        schedule_retry_connect();
+    }
+}
+
+static void schedule_retry_connect(void)
+{
+    if (s_retry_connect_timer == NULL) {
+        return;
+    }
+
+    esp_err_t stop_ret = esp_timer_stop(s_retry_connect_timer);
+    if (stop_ret != ESP_OK && stop_ret != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "Retry timer stop failed: %s", esp_err_to_name(stop_ret));
+    }
+    esp_err_t start_ret = esp_timer_start_once(s_retry_connect_timer, WIFI_RETRY_DELAY_US);
+    if (start_ret != ESP_OK) {
+        ESP_LOGW(TAG, "Retry timer start failed: %s", esp_err_to_name(start_ret));
+        state_set_status("Retry timer failed");
+    }
+}
+
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     (void)arg;
@@ -102,11 +136,11 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         ESP_LOGI(TAG, "Wi-Fi started. Delay 2.5s then connect.");
         state_set_status("Wi-Fi start. Connect in 2.5s");
         state_set_ip("-");
-        esp_err_t stop_ret = esp_timer_stop(s_connect_timer);
+        esp_err_t stop_ret = esp_timer_stop(s_start_connect_timer);
         if (stop_ret != ESP_OK && stop_ret != ESP_ERR_INVALID_STATE) {
             ESP_LOGW(TAG, "Timer stop failed: %s", esp_err_to_name(stop_ret));
         }
-        ESP_ERROR_CHECK(esp_timer_start_once(s_connect_timer, WIFI_START_CONNECT_DELAY_US));
+        ESP_ERROR_CHECK(esp_timer_start_once(s_start_connect_timer, WIFI_START_CONNECT_DELAY_US));
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
         ESP_LOGI(TAG, "AP connected. Waiting DHCP.");
         state_set_status("AP connected. Waiting DHCP...");
@@ -117,11 +151,17 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         snprintf(ip_text, sizeof(ip_text), IPSTR, IP2STR(&event->ip_info.ip));
         state_set_ip(ip_text);
         state_set_status("Connected");
+        esp_err_t stop_ret = esp_timer_stop(s_retry_connect_timer);
+        if (stop_ret != ESP_OK && stop_ret != ESP_ERR_INVALID_STATE) {
+            ESP_LOGW(TAG, "Retry timer stop failed: %s", esp_err_to_name(stop_ret));
+        }
         ESP_LOGI(TAG, "Got IP: %s", ip_text);
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_LOST_IP) {
         ESP_LOGW(TAG, "IP lost");
+        state_inc_retry();
         state_set_ip("-");
-        state_set_status("IP lost");
+        state_set_status("IP lost. Retry in 5s...");
+        schedule_retry_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t *disconnected = (wifi_event_sta_disconnected_t *)event_data;
         char status_text[96];
@@ -131,19 +171,14 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
         state_lock();
         retry_snapshot = s_state.retry_count;
-        snprintf(status_text, sizeof(status_text), "Disconnected (reason=%u). Retry...", (unsigned)disconnected->reason);
+        snprintf(status_text, sizeof(status_text), "Disconnected (reason=%u). Retry in 5s...", (unsigned)disconnected->reason);
         snprintf(s_state.wifi_status, sizeof(s_state.wifi_status), "%s", status_text);
         snprintf(s_state.ip_address, sizeof(s_state.ip_address), "-");
         s_state_dirty = true;
         state_unlock();
 
         ESP_LOGW(TAG, "Disconnected, reason=%u retry=%" PRIu32, (unsigned)disconnected->reason, retry_snapshot);
-
-        esp_err_t ret = esp_wifi_connect();
-        if (ret != ESP_OK) {
-            ESP_LOGW(TAG, "esp_wifi_connect failed after disconnect: %s", esp_err_to_name(ret));
-            state_set_status("Reconnect request failed");
-        }
+        schedule_retry_connect();
     }
 }
 
@@ -177,11 +212,20 @@ esp_err_t wifi_sta_ui_start(void)
         return ESP_FAIL;
     }
 
-    const esp_timer_create_args_t connect_timer_args = {
-        .callback = connect_timer_cb,
-        .name = "wifi_start_connect_delay"
-    };
-    ESP_ERROR_CHECK(esp_timer_create(&connect_timer_args, &s_connect_timer));
+    if (s_start_connect_timer == NULL) {
+        const esp_timer_create_args_t start_timer_args = {
+            .callback = start_connect_timer_cb,
+            .name = "wifi_start_connect_delay"
+        };
+        ESP_ERROR_CHECK(esp_timer_create(&start_timer_args, &s_start_connect_timer));
+    }
+    if (s_retry_connect_timer == NULL) {
+        const esp_timer_create_args_t retry_timer_args = {
+            .callback = retry_connect_timer_cb,
+            .name = "wifi_retry_connect_delay"
+        };
+        ESP_ERROR_CHECK(esp_timer_create(&retry_timer_args, &s_retry_connect_timer));
+    }
 
     wifi_init_config_t wifi_init_cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&wifi_init_cfg));

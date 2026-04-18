@@ -6,6 +6,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
+#include "driver/i2c.h"
 #include "driver/ledc.h"
 #include "driver/spi_master.h"
 #include "esp_heap_caps.h"
@@ -312,8 +313,121 @@ void example_lvgl_rounder_cb(struct _lv_disp_drv_t *disp_drv, lv_area_t *area)
 }
 
 #if EXAMPLE_USE_TOUCH
+static bool s_touch_inited = false;
+
+static esp_err_t touch_i2c_read(uint8_t reg, uint8_t *data, size_t len)
+{
+    return i2c_master_write_read_device(TOUCH_HOST, EXAMPLE_TOUCH_ADDR, &reg, 1, data, len, pdMS_TO_TICKS(20));
+}
+
+static esp_err_t touch_panel_init(void)
+{
+    esp_err_t err = ESP_OK;
+
+    i2c_config_t conf = {
+        .mode = I2C_MODE_MASTER,
+        .sda_io_num = ESP32_SDA_NUM,
+        .scl_io_num = ESP32_SCL_NUM,
+        .sda_pullup_en = GPIO_PULLUP_ENABLE,
+        .scl_pullup_en = GPIO_PULLUP_ENABLE,
+        .master.clk_speed = 400000,
+    };
+
+    err = i2c_param_config(TOUCH_HOST, &conf);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "i2c_param_config failed: %d", err);
+        return err;
+    }
+
+    err = i2c_driver_install(TOUCH_HOST, I2C_MODE_MASTER, 0, 0, 0);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE(TAG, "i2c_driver_install failed: %d", err);
+        return err;
+    }
+
+    const gpio_config_t rst_conf = {
+        .pin_bit_mask = (1ULL << EXAMPLE_PIN_NUM_TOUCH_RST),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    err = gpio_config(&rst_conf);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "touch rst gpio_config failed: %d", err);
+        return err;
+    }
+
+    const gpio_config_t int_conf = {
+        .pin_bit_mask = (1ULL << EXAMPLE_PIN_NUM_TOUCH_INT),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    err = gpio_config(&int_conf);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "touch int gpio_config failed: %d", err);
+        return err;
+    }
+
+    err = gpio_set_level(EXAMPLE_PIN_NUM_TOUCH_RST, 0);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "touch rst low failed: %d", err);
+        return err;
+    }
+    vTaskDelay(pdMS_TO_TICKS(20));
+    err = gpio_set_level(EXAMPLE_PIN_NUM_TOUCH_RST, 1);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "touch rst high failed: %d", err);
+        return err;
+    }
+    vTaskDelay(pdMS_TO_TICKS(120));
+
+    uint8_t chip_id = 0;
+    err = touch_i2c_read(0xA7, &chip_id, 1); /* CST816 chip id register */
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Touch probe ok, chip_id=0x%02X", chip_id);
+    } else {
+        ESP_LOGW(TAG, "Touch probe failed (err=%d), continue anyway", err);
+    }
+
+    s_touch_inited = true;
+    return ESP_OK;
+}
+
+static uint8_t tpGetCoordinates(uint16_t *x, uint16_t *y)
+{
+    if (!s_touch_inited || !x || !y) {
+        return 0;
+    }
+
+    /* 0x01..0x06: gesture, finger_num, xh, xl, yh, yl (CST816 family) */
+    uint8_t data[6] = {0};
+    if (touch_i2c_read(0x01, data, sizeof(data)) != ESP_OK) {
+        return 0;
+    }
+
+    uint8_t finger_num = data[1] & 0x0F;
+    if (finger_num == 0) {
+        return 0;
+    }
+
+    *x = (uint16_t)(((data[2] & 0x0F) << 8) | data[3]);
+    *y = (uint16_t)(((data[4] & 0x0F) << 8) | data[5]);
+    return 1;
+}
+
+#define SWIPE_TRIGGER_PX    60
+#define SWIPE_DOMINANCE_PX  20
+
 static void example_lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
 {
+    static bool touch_active = false;
+    static bool swipe_fired = false;
+    static int16_t start_x = 0;
+    static int16_t start_y = 0;
+
     uint16_t tp_x;
     uint16_t tp_y;
     uint8_t win = tpGetCoordinates(&tp_x,&tp_y);
@@ -331,11 +445,28 @@ static void example_lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
         if(data->point.y > EXAMPLE_LCD_V_RES)
         data->point.y = EXAMPLE_LCD_V_RES;
         data->state = LV_INDEV_STATE_PRESSED;
-        //ESP_LOGE("TP","(%d,%d)",data->point.x,data->point.y);
+        if (!touch_active) {
+            touch_active = true;
+            swipe_fired = false;
+            start_x = data->point.x;
+            start_y = data->point.y;
+        } else if (!swipe_fired) {
+            int dx = (int)data->point.x - (int)start_x;
+            int dy = (int)data->point.y - (int)start_y;
+            int adx = (dx >= 0) ? dx : -dx;
+            int ady = (dy >= 0) ? dy : -dy;
+
+            if (adx >= SWIPE_TRIGGER_PX && adx >= (ady + SWIPE_DOMINANCE_PX)) {
+                ui_swipe_to_dir((dx < 0) ? LV_DIR_LEFT : LV_DIR_RIGHT);
+                swipe_fired = true;
+            }
+        }
     }
     else
     {
         data->state = LV_INDEV_STATE_RELEASED;
+        touch_active = false;
+        swipe_fired = false;
     }
 }
 #endif
@@ -490,6 +621,7 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer, EXAMPLE_LVGL_TICK_PERIOD_MS * 1000));
 
 #if EXAMPLE_USE_TOUCH
+    ESP_ERROR_CHECK(touch_panel_init());
     lv_disp_t *disp = lv_disp_get_default();
     static lv_indev_drv_t indev_drv;           // Input device driver (Touch)
     lv_indev_drv_init(&indev_drv);

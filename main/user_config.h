@@ -36,7 +36,7 @@
 #define EXAMPLE_LVGL_TASK_STACK_SIZE   (4 * 1024)
 #define EXAMPLE_LVGL_TASK_PRIORITY     2
 
-#define EXAMPLE_USE_TOUCH  0 // 0: touch off, 1: touch on
+#define EXAMPLE_USE_TOUCH  1 // 0: touch off, 1: touch on
 
 //#define Backlight_Testing
 //#define EXAMPLE_Rotate_90
