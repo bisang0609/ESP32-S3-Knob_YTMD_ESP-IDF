@@ -27,6 +27,7 @@
 #include "encoder_control.h"
 #include "app_ui.h"
 #include "app_fonts.h"
+#include "app_runtime_config.h"
 
 static const char *TAG = "main";
 static SemaphoreHandle_t lvgl_mux = NULL;
@@ -542,6 +543,7 @@ static void ui_update_from_wifi(void)
 
     if (lvgl_lock(-1)) {
         ui_tick();
+        app_ui_set_main_startup_status(snapshot.wifi_status);
         lvgl_unlock();
     }
 }
@@ -649,6 +651,11 @@ void app_main(void)
         app_ui_init_runtime_overlays();
         app_init_fonts();
         lvgl_unlock();
+    }
+
+    esp_err_t cfg_ret = app_runtime_config_init();
+    if (cfg_ret != ESP_OK) {
+        ESP_LOGW(TAG, "Runtime config init failed: %s", esp_err_to_name(cfg_ret));
     }
 
     ESP_ERROR_CHECK(wifi_sta_ui_start());

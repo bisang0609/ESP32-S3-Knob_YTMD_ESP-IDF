@@ -18,6 +18,9 @@ void app_ui_swipe_to_dir(lv_dir_t dir);
 /* Runtime loading overlays on main screen */
 void app_ui_set_loading_spinner_visible(bool visible);
 void app_ui_set_loading_progress(bool visible, int percent);
+void app_ui_set_info_background_art(const lv_img_dsc_t *art_dsc);
+void app_ui_set_main_startup_status(const char *status_text);
+void app_ui_finish_main_startup_status(void);
 
 #ifdef __cplusplus
 }

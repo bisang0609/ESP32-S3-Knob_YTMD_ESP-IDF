@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "main.c"
+        "app_runtime_config.c"
         "app_fonts.c"
         "app_ui.c"
         "encoder_control.c"
@@ -20,6 +21,7 @@ idf_component_register(
     REQUIRES
         driver
         esp_driver_ledc
+        esp_partition
         esp_lcd
         esp_event
         esp_http_client
@@ -27,5 +29,7 @@ idf_component_register(
         esp_timer
         esp_wifi
         esp_new_jpeg
+        fatfs
         lvgl
-        nvs_flash)
+        nvs_flash
+        wear_levelling)

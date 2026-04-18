@@ -1,4 +1,5 @@
 #include "wifi_sta_ui.h"
+#include "app_runtime_config.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -13,8 +14,6 @@
 #include "esp_wifi.h"
 #include "nvs_flash.h"
 
-#define WIFI_SSID "YeoSangMin_2G"
-#define WIFI_PASS "min1596321"
 #define WIFI_START_CONNECT_DELAY_US (2500 * 1000)
 #define WIFI_RETRY_DELAY_US         (5000 * 1000)
 
@@ -90,11 +89,11 @@ static void start_connect_timer_cb(void *arg)
 {
     (void)arg;
 
-    state_set_status("Connecting...");
+    state_set_status("Connecting");
     esp_err_t ret = esp_wifi_connect();
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "esp_wifi_connect failed from startup timer: %s", esp_err_to_name(ret));
-        state_set_status("Connect request failed");
+        state_set_status("Fail connect");
     }
 }
 
@@ -102,11 +101,11 @@ static void retry_connect_timer_cb(void *arg)
 {
     (void)arg;
 
-    state_set_status("Retrying...");
+    state_set_status("Connecting");
     esp_err_t ret = esp_wifi_connect();
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "esp_wifi_connect failed from retry timer: %s", esp_err_to_name(ret));
-        state_set_status("Retry request failed");
+        state_set_status("Fail connect");
         schedule_retry_connect();
     }
 }
@@ -124,7 +123,7 @@ static void schedule_retry_connect(void)
     esp_err_t start_ret = esp_timer_start_once(s_retry_connect_timer, WIFI_RETRY_DELAY_US);
     if (start_ret != ESP_OK) {
         ESP_LOGW(TAG, "Retry timer start failed: %s", esp_err_to_name(start_ret));
-        state_set_status("Retry timer failed");
+        state_set_status("Fail connect");
     }
 }
 
@@ -134,7 +133,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         ESP_LOGI(TAG, "Wi-Fi started. Delay 2.5s then connect.");
-        state_set_status("Wi-Fi start. Connect in 2.5s");
+        state_set_status("Find AP");
         state_set_ip("-");
         esp_err_t stop_ret = esp_timer_stop(s_start_connect_timer);
         if (stop_ret != ESP_OK && stop_ret != ESP_ERR_INVALID_STATE) {
@@ -143,14 +142,14 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         ESP_ERROR_CHECK(esp_timer_start_once(s_start_connect_timer, WIFI_START_CONNECT_DELAY_US));
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
         ESP_LOGI(TAG, "AP connected. Waiting DHCP.");
-        state_set_status("AP connected. Waiting DHCP...");
+        state_set_status("Connecting");
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         char ip_text[32];
 
         snprintf(ip_text, sizeof(ip_text), IPSTR, IP2STR(&event->ip_info.ip));
         state_set_ip(ip_text);
-        state_set_status("Connected");
+        state_set_status("Connecting");
         esp_err_t stop_ret = esp_timer_stop(s_retry_connect_timer);
         if (stop_ret != ESP_OK && stop_ret != ESP_ERR_INVALID_STATE) {
             ESP_LOGW(TAG, "Retry timer stop failed: %s", esp_err_to_name(stop_ret));
@@ -160,19 +159,17 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         ESP_LOGW(TAG, "IP lost");
         state_inc_retry();
         state_set_ip("-");
-        state_set_status("IP lost. Retry in 5s...");
+        state_set_status("Fail connect");
         schedule_retry_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t *disconnected = (wifi_event_sta_disconnected_t *)event_data;
-        char status_text[96];
         uint32_t retry_snapshot;
 
         state_inc_retry();
 
         state_lock();
         retry_snapshot = s_state.retry_count;
-        snprintf(status_text, sizeof(status_text), "Disconnected (reason=%u). Retry in 5s...", (unsigned)disconnected->reason);
-        snprintf(s_state.wifi_status, sizeof(s_state.wifi_status), "%s", status_text);
+        snprintf(s_state.wifi_status, sizeof(s_state.wifi_status), "%s", "Fail connect");
         snprintf(s_state.ip_address, sizeof(s_state.ip_address), "-");
         s_state_dirty = true;
         state_unlock();
@@ -192,7 +189,7 @@ esp_err_t wifi_sta_ui_start(void)
     }
 
     state_lock();
-    state_set_locked("Wi-Fi init...", "-", 0);
+    state_set_locked("Find AP", "-", 0);
     state_unlock();
 
     ESP_ERROR_CHECK(nvs_init_safe());
@@ -235,15 +232,35 @@ esp_err_t wifi_sta_ui_start(void)
 
     wifi_config_t wifi_config = {
         .sta = {
-            .threshold.authmode = WIFI_AUTH_WPA2_PSK,
+            .threshold.authmode = WIFI_AUTH_OPEN,
             .pmf_cfg = {
                 .capable = true,
                 .required = false
             }
         }
     };
-    snprintf((char *)wifi_config.sta.ssid, sizeof(wifi_config.sta.ssid), "%s", WIFI_SSID);
-    snprintf((char *)wifi_config.sta.password, sizeof(wifi_config.sta.password), "%s", WIFI_PASS);
+
+    const app_runtime_config_t *cfg = app_runtime_config_get();
+    const char *ssid = cfg->wifi_ssid;
+    const char *pass = cfg->wifi_password;
+    if (!ssid || ssid[0] == '\0') {
+        ssid = "";
+    }
+    if (!pass) {
+        pass = "";
+    }
+
+    size_t ssid_len = strnlen(ssid, sizeof(wifi_config.sta.ssid) - 1);
+    memcpy(wifi_config.sta.ssid, ssid, ssid_len);
+    wifi_config.sta.ssid[ssid_len] = '\0';
+
+    size_t pass_len = strnlen(pass, sizeof(wifi_config.sta.password) - 1);
+    memcpy(wifi_config.sta.password, pass, pass_len);
+    wifi_config.sta.password[pass_len] = '\0';
+    wifi_config.sta.threshold.authmode = (pass[0] != '\0') ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
+
+    ESP_LOGI(TAG, "Wi-Fi config loaded: ssid='%s' pw_len=%u",
+             ssid, (unsigned)strlen(pass));
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));

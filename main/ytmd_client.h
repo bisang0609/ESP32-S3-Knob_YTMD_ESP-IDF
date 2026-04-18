@@ -15,7 +15,7 @@ typedef enum {
 } ytmd_cmd_t;
 
 /* Start the YTMD client task.
- * Waits for TCP connection to YTMD_IP:YTMD_PORT, then polls /api/v1/song.
+ * Waits for TCP connection to configured targetIP:YTMD_PORT, then polls /api/v1/song.
  * On song change, downloads and displays album art on objects.album_art.
  */
 esp_err_t ytmd_client_start(void);

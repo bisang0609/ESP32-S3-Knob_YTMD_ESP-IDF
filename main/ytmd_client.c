@@ -1,6 +1,7 @@
 #include "ytmd_client.h"
 #include "encoder_control.h"
 #include "app_ui.h"
+#include "app_runtime_config.h"
 #include "lvgl_lock.h"
 #include "ui/screens.h"
 #include "esp_jpeg_dec.h"
@@ -19,7 +20,6 @@
 
 static const char *TAG = "ytmd";
 
-#define YTMD_IP          "192.168.0.30"
 #define YTMD_PORT        26538
 #define POLL_INTERVAL_MS 2000
 #define CONNECT_RETRY_MS 3000
@@ -67,7 +67,18 @@ static void display_loadingbar(bool visible, int percent);
 static void display_loading_spinner(bool visible);
 static void display_seek_arc(int percent);
 static void display_song_meta(const char *title, const char *artist);
+static void display_main_startup_status(const char *status);
+static void display_main_startup_done(void);
 static int parse_elapsed_seconds(const char *json);
+
+static const char *ytmd_target_ip(void)
+{
+    const app_runtime_config_t *cfg = app_runtime_config_get();
+    if (cfg && cfg->target_ip[0] != '\0') {
+        return cfg->target_ip;
+    }
+    return "192.168.0.30";
+}
 
 /* ------------------------------------------------------------------ */
 /* JPEG decoder                                                         */
@@ -361,8 +372,8 @@ static esp_err_t poll_event_handler(esp_http_client_event_t *evt)
 
 static bool poll_ytmd(void)
 {
-    char url[64];
-    snprintf(url, sizeof(url), "http://" YTMD_IP ":%d/api/v1/song", YTMD_PORT);
+    char url[128];
+    snprintf(url, sizeof(url), "http://%s:%d/api/v1/song", ytmd_target_ip(), YTMD_PORT);
 
     s_resp_len = 0;
     esp_http_client_config_t cfg = {
@@ -389,8 +400,8 @@ static bool is_http_success(int status_code)
 
 static esp_err_t try_transport_endpoint(const char *path, esp_http_client_method_t method)
 {
-    char url[96];
-    snprintf(url, sizeof(url), "http://" YTMD_IP ":%d%s", YTMD_PORT, path);
+    char url[160];
+    snprintf(url, sizeof(url), "http://%s:%d%s", ytmd_target_ip(), YTMD_PORT, path);
 
     esp_http_client_config_t cfg = {
         .url = url,
@@ -1009,6 +1020,24 @@ static void display_song_meta(const char *title, const char *artist)
     lvgl_unlock();
 }
 
+static void display_main_startup_status(const char *status)
+{
+    if (!lvgl_lock(200)) return;
+
+    app_ui_set_main_startup_status(status);
+
+    lvgl_unlock();
+}
+
+static void display_main_startup_done(void)
+{
+    if (!lvgl_lock(200)) return;
+
+    app_ui_finish_main_startup_status();
+
+    lvgl_unlock();
+}
+
 static void display_art(void)
 {
     if (!lvgl_lock(1000)) return;
@@ -1020,6 +1049,8 @@ static void display_art(void)
     s_art_dsc.header.h           = ART_H;
     s_art_dsc.data_size          = ART_BUF_SIZE;
     s_art_dsc.data               = s_art_buf;
+
+    app_ui_set_info_background_art(&s_art_dsc);
 
     if (objects.album_art) {
         int dst_w = lv_obj_get_width(objects.album_art);
@@ -1092,18 +1123,20 @@ static void ytmd_task(void *arg)
     ESP_LOGI(TAG, "Waiting for IP address...");
     wait_for_ip();
     display_loading_spinner(false);
-    ESP_LOGI(TAG, "IP ready. Connecting to YTMD at %s:%d ...", YTMD_IP, YTMD_PORT);
+    ESP_LOGI(TAG, "IP ready. Connecting to YTMD at %s:%d ...", ytmd_target_ip(), YTMD_PORT);
 
     /* Wait until YTMD server responds */
     while (!poll_ytmd()) {
         vTaskDelay(pdMS_TO_TICKS(CONNECT_RETRY_MS));
     }
     ESP_LOGI(TAG, "YTMD connected - system started");
+    display_main_startup_status("Album ART Loading");
 
     char new_id[64];
     char new_art[512];
     char new_title[160];
     char new_artist[160];
+    bool first_art_displayed = false;
 
     /* Main poll loop */
     while (1) {
@@ -1166,6 +1199,10 @@ static void ytmd_task(void *arg)
                     if (decode_jpeg(s_dl_buf, s_dl_len, s_art_buf)) {
                         display_art();
                         display_loadingbar(false, 100);
+                        if (!first_art_displayed) {
+                            first_art_displayed = true;
+                            display_main_startup_done();
+                        }
                     } else {
                         display_loadingbar(false, 0);
                     }

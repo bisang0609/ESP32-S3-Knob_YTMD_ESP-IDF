@@ -23,6 +23,9 @@ typedef struct _objects_t {
     lv_obj_t *wifi;
     lv_obj_t *album_art;
     lv_obj_t *loadingbar;
+    lv_obj_t *prg1;
+    lv_obj_t *prg2;
+    lv_obj_t *ap_status;
     lv_obj_t *pause;
     lv_obj_t *art2;
     lv_obj_t *seek;

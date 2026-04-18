@@ -66,6 +66,31 @@ void create_screen_main() {
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, 360, 360);
         }
+        {
+            // prg1
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.prg1 = obj;
+            lv_obj_set_pos(obj, 108, 115);
+            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_obj_set_style_text_font(obj, &lv_font_montserrat_14, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text_static(obj, "YTMD");
+        }
+        {
+            // prg2
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.prg2 = obj;
+            lv_obj_set_pos(obj, 93, 167);
+            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_label_set_text_static(obj, "YouTube Music Desktop");
+        }
+        {
+            // ap_Status
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.ap_status = obj;
+            lv_obj_set_pos(obj, 137, 217);
+            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_label_set_text_static(obj, "Connecting");
+        }
     }
     
     tick_screen_main();
