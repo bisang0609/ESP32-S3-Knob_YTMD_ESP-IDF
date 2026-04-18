@@ -29,6 +29,10 @@
 #define EXAMPLE_PIN_NUM_TOUCH_RST         (gpio_num_t)10
 #define EXAMPLE_PIN_NUM_TOUCH_INT         (gpio_num_t)9
 
+// Encoder
+#define EXAMPLE_ENCODER_ECA_PIN           8
+#define EXAMPLE_ENCODER_ECB_PIN           7
+
 
 #define EXAMPLE_LVGL_TICK_PERIOD_MS    2
 #define EXAMPLE_LVGL_TASK_MAX_DELAY_MS 500

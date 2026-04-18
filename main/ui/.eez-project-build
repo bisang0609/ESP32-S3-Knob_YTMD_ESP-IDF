@@ -11,10 +11,7 @@
     "styles.h",
     "ui.c",
     "ui.h",
-    "ui_font_font_jp_14.c",
-    "ui_font_font_jp_16.c",
-    "ui_font_font_kor_14.c",
-    "ui_font_font_kor_16.c",
+    "ui_image_pause_circle_140dp_1_f1_f1_f_fill0_wght400_grad0_opsz48.c",
     "vars.h"
   ]
 }

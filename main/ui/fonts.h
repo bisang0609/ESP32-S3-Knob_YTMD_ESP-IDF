@@ -7,11 +7,6 @@
 extern "C" {
 #endif
 
-extern const lv_font_t ui_font_font_kor_16;
-extern const lv_font_t ui_font_font_kor_14;
-extern const lv_font_t ui_font_font_jp_16;
-extern const lv_font_t ui_font_font_jp_14;
-
 #ifndef EXT_FONT_DESC_T
 #define EXT_FONT_DESC_T
 typedef struct _ext_font_desc_t {

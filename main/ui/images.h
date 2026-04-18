@@ -7,6 +7,8 @@
 extern "C" {
 #endif
 
+extern const lv_img_dsc_t img_pause_circle_140dp_1_f1_f1_f_fill0_wght400_grad0_opsz48;
+
 #ifndef EXT_IMG_DESC_T
 #define EXT_IMG_DESC_T
 typedef struct _ext_img_desc_t {

@@ -1,16 +1,19 @@
 idf_component_register(
     SRCS
         "main.c"
+        "app_fonts.c"
+        "app_ui.c"
+        "encoder_control.c"
+        "bidi_switch_knob.c"
         "wifi_sta_ui.c"
         "ytmd_client.c"
+        "font/Font_UI_14.c"
+        "font/Font_UI_16.c"
         "ui/images.c"
+        "ui/ui_image_pause_circle_140dp_1_f1_f1_f_fill0_wght400_grad0_opsz48.c"
         "ui/screens.c"
         "ui/styles.c"
         "ui/ui.c"
-        "ui/ui_font_font_jp_14.c"
-        "ui/ui_font_font_jp_16.c"
-        "ui/ui_font_font_kor_14.c"
-        "ui/ui_font_font_kor_16.c"
     INCLUDE_DIRS
         "."
         "ui"

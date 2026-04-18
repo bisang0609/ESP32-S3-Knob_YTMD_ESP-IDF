@@ -24,6 +24,9 @@
 #include "wifi_sta_ui.h"
 #include "lvgl_lock.h"
 #include "ytmd_client.h"
+#include "encoder_control.h"
+#include "app_ui.h"
+#include "app_fonts.h"
 
 static const char *TAG = "main";
 static SemaphoreHandle_t lvgl_mux = NULL;
@@ -457,7 +460,7 @@ static void example_lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
             int ady = (dy >= 0) ? dy : -dy;
 
             if (adx >= SWIPE_TRIGGER_PX && adx >= (ady + SWIPE_DOMINANCE_PX)) {
-                ui_swipe_to_dir((dx < 0) ? LV_DIR_LEFT : LV_DIR_RIGHT);
+                app_ui_swipe_to_dir((dx < 0) ? LV_DIR_LEFT : LV_DIR_RIGHT);
                 swipe_fired = true;
             }
         }
@@ -643,11 +646,14 @@ void app_main(void)
     if (lvgl_lock(-1))
     {
         ui_init();
+        app_ui_init_runtime_overlays();
+        app_init_fonts();
         lvgl_unlock();
     }
 
     ESP_ERROR_CHECK(wifi_sta_ui_start());
     ESP_ERROR_CHECK(ytmd_client_start());
+    ESP_ERROR_CHECK(encoder_control_start());
 
     while (1) {
         ui_update_from_wifi();

@@ -1,4 +1,6 @@
 #include "ytmd_client.h"
+#include "encoder_control.h"
+#include "app_ui.h"
 #include "lvgl_lock.h"
 #include "ui/screens.h"
 #include "esp_jpeg_dec.h"
@@ -21,6 +23,10 @@ static const char *TAG = "ytmd";
 #define YTMD_PORT        26538
 #define POLL_INTERVAL_MS 2000
 #define CONNECT_RETRY_MS 3000
+#define PREV_DOUBLE_THRESHOLD_S 3
+#define PREV_DOUBLE_DELAY_MS    180
+#define ART_DL_RETRY_MAX        3
+#define ART_DL_RETRY_DELAY_MS   200
 
 #define ART_W  360
 #define ART_H  360
@@ -49,6 +55,8 @@ static int      s_dl_expected_len = 0;
 static char s_cur_video_id[64] = {0};
 static char s_cur_title[160] = {0};
 static char s_cur_artist[160] = {0};
+static volatile int s_last_elapsed_seconds = -1;
+static volatile int s_last_seek_percent = -1;
 
 /* HTTP poll response buffer */
 static char s_resp_buf[RESP_BUF_MAX];
@@ -59,6 +67,7 @@ static void display_loadingbar(bool visible, int percent);
 static void display_loading_spinner(bool visible);
 static void display_seek_arc(int percent);
 static void display_song_meta(const char *title, const char *artist);
+static int parse_elapsed_seconds(const char *json);
 
 /* ------------------------------------------------------------------ */
 /* JPEG decoder                                                         */
@@ -276,35 +285,63 @@ static void make_http_url(const char *in, char *out, int out_size)
 static bool download_art(const char *url)
 {
     if (!url || url[0] == '\0' || !s_dl_buf) return false;
-    s_dl_len = 0;
-    s_dl_expected_len = 0;
-    display_loading_spinner(false);
-    display_loadingbar(true, 0);
+    char urls[2][512] = {{0}};
+    int url_count = 0;
 
-    char http_url[512];
-    make_http_url(url, http_url, sizeof(http_url));
+    make_http_url(url, urls[url_count], sizeof(urls[url_count]));
+    url_count++;
 
-    esp_http_client_config_t cfg = {
-        .url           = http_url,
-        .event_handler = dl_event_handler,
-        .timeout_ms    = 8000,
-        .buffer_size   = 8192,
-    };
-    esp_http_client_handle_t client = esp_http_client_init(&cfg);
-    if (!client) return false;
-
-    esp_err_t err    = esp_http_client_perform(client);
-    int       status = esp_http_client_get_status_code(client);
-    esp_http_client_cleanup(client);
-
-    if (err != ESP_OK || status != 200) {
-        ESP_LOGE(TAG, "Art download failed err=%d status=%d url=%s", err, status, http_url);
-        display_loadingbar(false, 0);
-        return false;
+    if (strncmp(url, "https://", 8) == 0 && strncmp(urls[0], url, sizeof(urls[0])) != 0) {
+        strncpy(urls[url_count], url, sizeof(urls[url_count]) - 1);
+        urls[url_count][sizeof(urls[url_count]) - 1] = '\0';
+        url_count++;
     }
-    ESP_LOGI(TAG, "Art downloaded %d bytes", s_dl_len);
-    display_loadingbar(true, 100);
-    return s_dl_len > 100; /* sanity: at least a tiny JPEG */
+
+    for (int u = 0; u < url_count; u++) {
+        for (int attempt = 1; attempt <= ART_DL_RETRY_MAX; attempt++) {
+            s_dl_len = 0;
+            s_dl_expected_len = 0;
+            display_loading_spinner(false);
+            display_loadingbar(true, 0);
+
+            esp_http_client_config_t cfg = {
+                .url           = urls[u],
+                .event_handler = dl_event_handler,
+                .timeout_ms    = 8000,
+                .buffer_size   = 8192,
+            };
+            esp_http_client_handle_t client = esp_http_client_init(&cfg);
+            if (!client) {
+                display_loadingbar(false, 0);
+                return false;
+            }
+
+            esp_err_t err = esp_http_client_perform(client);
+            int status = esp_http_client_get_status_code(client);
+            bool complete = esp_http_client_is_complete_data_received(client);
+            esp_http_client_cleanup(client);
+
+            bool ok = (err == ESP_OK) && (status == 200) && complete && (s_dl_len > 100);
+            if (ok) {
+                ESP_LOGI(TAG, "Art downloaded %d bytes (attempt %d/%d, url_idx=%d)",
+                         s_dl_len, attempt, ART_DL_RETRY_MAX, u);
+                display_loadingbar(true, 100);
+                return true;
+            }
+
+            ESP_LOGW(TAG, "Art download retry %d/%d failed err=%s status=%d complete=%d len=%d expected=%d url=%s",
+                     attempt, ART_DL_RETRY_MAX, esp_err_to_name(err), status, (int)complete,
+                     s_dl_len, s_dl_expected_len, urls[u]);
+
+            if (attempt < ART_DL_RETRY_MAX) {
+                vTaskDelay(pdMS_TO_TICKS(ART_DL_RETRY_DELAY_MS));
+            }
+        }
+    }
+
+    ESP_LOGE(TAG, "Art download failed after retries: %s", url);
+    display_loadingbar(false, 0);
+    return false;
 }
 
 /* ------------------------------------------------------------------ */
@@ -343,6 +380,122 @@ static bool poll_ytmd(void)
     if (err != ESP_OK || status != 200) return false;
     s_resp_buf[s_resp_len] = '\0';
     return s_resp_len > 0;
+}
+
+static bool is_http_success(int status_code)
+{
+    return (status_code >= 200) && (status_code < 300);
+}
+
+static esp_err_t try_transport_endpoint(const char *path, esp_http_client_method_t method)
+{
+    char url[96];
+    snprintf(url, sizeof(url), "http://" YTMD_IP ":%d%s", YTMD_PORT, path);
+
+    esp_http_client_config_t cfg = {
+        .url = url,
+        .timeout_ms = 1500,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    if (!client) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_http_client_set_method(client, method);
+    esp_err_t err = esp_http_client_perform(client);
+    int status = esp_http_client_get_status_code(client);
+    esp_http_client_cleanup(client);
+
+    if (err == ESP_OK && is_http_success(status)) {
+        ESP_LOGI(TAG, "transport cmd ok (%s %s): %d",
+                 method == HTTP_METHOD_POST ? "POST" : "GET", path, status);
+        return ESP_OK;
+    }
+
+    ESP_LOGW(TAG, "transport cmd failed (%s %s): err=%s status=%d",
+             method == HTTP_METHOD_POST ? "POST" : "GET",
+             path, esp_err_to_name(err), status);
+    return (err != ESP_OK) ? err : ESP_FAIL;
+}
+
+esp_err_t ytmd_client_send_command(ytmd_cmd_t cmd)
+{
+    static const char *next_paths[] = {
+        "/api/v1/next",
+        "/api/v1/nextTrack",
+    };
+    static const char *prev_paths[] = {
+        "/api/v1/previous",
+        "/api/v1/prev",
+        "/api/v1/previousTrack",
+    };
+    static const char *pause_paths[] = {
+        "/api/v1/pause",
+        "/api/v1/player/pause",
+        "/api/v1/togglePause",
+        "/api/v1/toggle-play",
+    };
+    static const char *play_paths[] = {
+        "/api/v1/play",
+        "/api/v1/player/play",
+        "/api/v1/resume",
+        "/api/v1/togglePause",
+        "/api/v1/toggle-play",
+    };
+
+    const char **paths = NULL;
+    size_t path_count = 0;
+    bool need_double_prev = false;
+
+    switch (cmd) {
+        case YTMD_CMD_NEXT:
+            paths = next_paths;
+            path_count = sizeof(next_paths) / sizeof(next_paths[0]);
+            break;
+        case YTMD_CMD_PREVIOUS:
+            paths = prev_paths;
+            path_count = sizeof(prev_paths) / sizeof(prev_paths[0]);
+            need_double_prev = (s_last_elapsed_seconds >= PREV_DOUBLE_THRESHOLD_S);
+            break;
+        case YTMD_CMD_PAUSE:
+            paths = pause_paths;
+            path_count = sizeof(pause_paths) / sizeof(pause_paths[0]);
+            break;
+        case YTMD_CMD_PLAY:
+            paths = play_paths;
+            path_count = sizeof(play_paths) / sizeof(play_paths[0]);
+            break;
+        default:
+            return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t last_err = ESP_FAIL;
+
+    for (size_t i = 0; i < path_count; i++) {
+        last_err = try_transport_endpoint(paths[i], HTTP_METHOD_POST);
+        if (last_err == ESP_OK) {
+            if (need_double_prev) {
+                vTaskDelay(pdMS_TO_TICKS(PREV_DOUBLE_DELAY_MS));
+                esp_err_t second = try_transport_endpoint(paths[i], HTTP_METHOD_POST);
+                ESP_LOGI(TAG, "previous double-send (POST) elapsed=%d sec ret=%s",
+                         (int)s_last_elapsed_seconds, esp_err_to_name(second));
+            }
+            return ESP_OK;
+        }
+
+        last_err = try_transport_endpoint(paths[i], HTTP_METHOD_GET);
+        if (last_err == ESP_OK) {
+            if (need_double_prev) {
+                vTaskDelay(pdMS_TO_TICKS(PREV_DOUBLE_DELAY_MS));
+                esp_err_t second = try_transport_endpoint(paths[i], HTTP_METHOD_GET);
+                ESP_LOGI(TAG, "previous double-send (GET) elapsed=%d sec ret=%s",
+                         (int)s_last_elapsed_seconds, esp_err_to_name(second));
+            }
+            return ESP_OK;
+        }
+    }
+
+    return last_err;
 }
 
 /* ------------------------------------------------------------------ */
@@ -416,6 +569,238 @@ static bool json_number(const char *json, const char *key, double *out)
     return false;
 }
 
+static const char *skip_json_ws(const char *p)
+{
+    while (p && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) {
+        p++;
+    }
+    return p;
+}
+
+static const char *find_matching_brace(const char *start, char open_ch, char close_ch)
+{
+    if (!start || *start != open_ch) {
+        return NULL;
+    }
+
+    int depth = 0;
+    bool in_str = false;
+    bool esc = false;
+
+    for (const char *p = start; *p; p++) {
+        char c = *p;
+
+        if (in_str) {
+            if (esc) {
+                esc = false;
+            } else if (c == '\\') {
+                esc = true;
+            } else if (c == '"') {
+                in_str = false;
+            }
+            continue;
+        }
+
+        if (c == '"') {
+            in_str = true;
+            continue;
+        }
+
+        if (c == open_ch) {
+            depth++;
+        } else if (c == close_ch) {
+            depth--;
+            if (depth == 0) {
+                return p;
+            }
+        }
+    }
+
+    return NULL;
+}
+
+static bool json_read_string_at(const char *p, char *out, int out_sz)
+{
+    if (!p || !out || out_sz <= 1 || *p != '"') {
+        return false;
+    }
+
+    p++;
+    int i = 0;
+    while (*p && *p != '"' && i < out_sz - 1) {
+        if (*p == '\\' && *(p + 1)) {
+            p++;
+        }
+        out[i++] = *p++;
+    }
+    out[i] = '\0';
+    return i > 0;
+}
+
+static const char *json_find_value_start(const char *json, const char *key)
+{
+    char needle[72];
+    snprintf(needle, sizeof(needle), "\"%s\"", key);
+
+    const char *p = json;
+    while ((p = strstr(p, needle)) != NULL) {
+        const char *v = p + strlen(needle);
+        v = skip_json_ws(v);
+        if (*v != ':') {
+            p = v;
+            continue;
+        }
+        v++;
+        v = skip_json_ws(v);
+        return v;
+    }
+    return NULL;
+}
+
+static bool parse_artist_from_obj(const char *obj_start, const char *obj_end,
+                                  char *artist_out, int artist_sz)
+{
+    if (!obj_start || !obj_end || obj_end <= obj_start) {
+        return false;
+    }
+
+    int n = (int)(obj_end - obj_start + 1);
+    char excerpt[1024];
+    if (n > (int)sizeof(excerpt) - 1) n = (int)sizeof(excerpt) - 1;
+    memcpy(excerpt, obj_start, n);
+    excerpt[n] = '\0';
+
+    return json_str(excerpt, "name", artist_out, artist_sz) ||
+           json_str(excerpt, "title", artist_out, artist_sz) ||
+           json_str(excerpt, "text", artist_out, artist_sz) ||
+           json_str(excerpt, "author", artist_out, artist_sz);
+}
+
+static bool parse_artist_from_value(const char *value_start, char *artist_out, int artist_sz)
+{
+    if (!value_start || !artist_out || artist_sz <= 1) {
+        return false;
+    }
+
+    value_start = skip_json_ws(value_start);
+    if (*value_start == '"') {
+        return json_read_string_at(value_start, artist_out, artist_sz);
+    }
+
+    if (*value_start == '{') {
+        const char *obj_end = find_matching_brace(value_start, '{', '}');
+        return parse_artist_from_obj(value_start, obj_end, artist_out, artist_sz);
+    }
+
+    if (*value_start == '[') {
+        const char *arr_end = find_matching_brace(value_start, '[', ']');
+        if (!arr_end) return false;
+
+        const char *p = value_start + 1;
+        while (p && p < arr_end) {
+            p = skip_json_ws(p);
+            if (p >= arr_end || *p == ']') break;
+            if (*p == ',') {
+                p++;
+                continue;
+            }
+
+            if (*p == '"') {
+                return json_read_string_at(p, artist_out, artist_sz);
+            }
+
+            if (*p == '{') {
+                const char *obj_end = find_matching_brace(p, '{', '}');
+                if (parse_artist_from_obj(p, obj_end, artist_out, artist_sz)) {
+                    return true;
+                }
+                if (!obj_end) return false;
+                p = obj_end + 1;
+                continue;
+            }
+
+            if (*p == '[') {
+                const char *sub_end = find_matching_brace(p, '[', ']');
+                if (!sub_end) return false;
+                p = sub_end + 1;
+                continue;
+            }
+
+            while (p < arr_end && *p != ',') p++;
+        }
+    }
+
+    return false;
+}
+
+static bool parse_artist_by_key(const char *js, const char *key, char *artist_out, int artist_sz)
+{
+    if (json_str(js, key, artist_out, artist_sz)) {
+        return true;
+    }
+    const char *v = json_find_value_start(js, key);
+    return parse_artist_from_value(v, artist_out, artist_sz);
+}
+
+static int parse_elapsed_seconds(const char *json)
+{
+    static const char *elapsed_keys[] = {
+        "elapsedSeconds", "elapsed", "elapsedTime", "currentTime", "position"
+    };
+
+    double elapsed = -1.0;
+    for (int i = 0; i < (int)(sizeof(elapsed_keys) / sizeof(elapsed_keys[0])); i++) {
+        if (json_number(json, elapsed_keys[i], &elapsed)) {
+            break;
+        }
+    }
+
+    if (elapsed < 0.0) {
+        return -1;
+    }
+    return (int)elapsed;
+}
+
+static int parse_duration_seconds(const char *json)
+{
+    static const char *duration_keys[] = {
+        "durationSeconds", "songDuration", "duration", "totalTime", "lengthSeconds"
+    };
+
+    double duration = -1.0;
+    for (int i = 0; i < (int)(sizeof(duration_keys) / sizeof(duration_keys[0])); i++) {
+        if (json_number(json, duration_keys[i], &duration)) {
+            break;
+        }
+    }
+
+    if (duration <= 0.0) {
+        return -1;
+    }
+    return (int)duration;
+}
+
+static bool parse_paused_state(const char *json, bool *paused_out)
+{
+    const char *v = json_find_value_start(json, "isPaused");
+    if (!v) {
+        v = json_find_value_start(json, "paused");
+    }
+    if (!v) {
+        return false;
+    }
+
+    if (strncmp(v, "true", 4) == 0 || strncmp(v, "\"true\"", 6) == 0 || *v == '1') {
+        *paused_out = true;
+        return true;
+    }
+    if (strncmp(v, "false", 5) == 0 || strncmp(v, "\"false\"", 7) == 0 || *v == '0') {
+        *paused_out = false;
+        return true;
+    }
+    return false;
+}
+
 static int parse_seek_percent(const char *json)
 {
     static const char *elapsed_keys[] = {
@@ -424,13 +809,8 @@ static int parse_seek_percent(const char *json)
     static const char *duration_keys[] = {
         "durationSeconds", "songDuration", "duration", "totalTime", "lengthSeconds"
     };
-    static const char *progress_keys[] = {
-        "progress", "songProgress", "percentage"
-    };
-
     double elapsed = -1.0;
     double duration = -1.0;
-    double progress = -1.0;
 
     for (int i = 0; i < (int)(sizeof(elapsed_keys) / sizeof(elapsed_keys[0])); i++) {
         if (json_number(json, elapsed_keys[i], &elapsed)) break;
@@ -445,12 +825,21 @@ static int parse_seek_percent(const char *json)
         return pct;
     }
 
-    for (int i = 0; i < (int)(sizeof(progress_keys) / sizeof(progress_keys[0])); i++) {
-        if (json_number(json, progress_keys[i], &progress)) break;
+    /* Fallback: only trust songProgress/progress when they are ratio-like (0.0 ~ 1.0).
+       Ignore generic percentage-like values to prevent 100% spikes on pause/resume. */
+    double progress = -1.0;
+    if (json_number(json, "songProgress", &progress) && progress >= 0.0) {
+        int pct = (progress <= 1.0) ? (int)(progress * 100.0) :
+                  (progress <= 100.0 ? (int)progress : -1);
+        if (pct >= 0) {
+            if (pct > 100) pct = 100;
+            return pct;
+        }
     }
-    if (progress >= 0.0) {
-        int pct = (progress <= 1.0) ? (int)(progress * 100.0) : (int)progress;
-        if (pct < 0) pct = 0;
+
+    progress = -1.0;
+    if (json_number(json, "progress", &progress) && progress >= 0.0 && progress <= 1.0) {
+        int pct = (int)(progress * 100.0);
         if (pct > 100) pct = 100;
         return pct;
     }
@@ -518,21 +907,8 @@ static void pick_thumbnail_url(const char *json, char *art_out, int art_sz)
 static void parse_artists_name(const char *js, char *artist_out, int artist_sz)
 {
     artist_out[0] = '\0';
-
-    const char *arr = strstr(js, "\"artists\"");
-    if (!arr) return;
-
-    const char *lb = strchr(arr, '[');
-    const char *rb = lb ? strchr(lb, ']') : NULL;
-    if (!lb || !rb || rb <= lb) return;
-
-    int n = (int)(rb - lb + 1);
-    char excerpt[1024];
-    if (n > (int)sizeof(excerpt) - 1) n = (int)sizeof(excerpt) - 1;
-    memcpy(excerpt, lb, n);
-    excerpt[n] = '\0';
-
-    json_str(excerpt, "name", artist_out, artist_sz);
+    const char *v = json_find_value_start(js, "artists");
+    parse_artist_from_value(v, artist_out, artist_sz);
 }
 
 static void parse_song(const char *js, char *vid_out, int vid_sz,
@@ -573,9 +949,12 @@ static void parse_song(const char *js, char *vid_out, int vid_sz,
     if (!title_out[0]) json_str(js, "name", title_out, title_sz);
     if (!title_out[0]) strncpy(title_out, "-", title_sz - 1);
 
-    json_str(js, "artist", artist_out, artist_sz);
-    if (!artist_out[0]) json_str(js, "author", artist_out, artist_sz);
+    parse_artist_by_key(js, "artist", artist_out, artist_sz);
+    if (!artist_out[0]) parse_artist_by_key(js, "author", artist_out, artist_sz);
+    if (!artist_out[0]) parse_artist_by_key(js, "artistName", artist_out, artist_sz);
+    if (!artist_out[0]) parse_artist_by_key(js, "artistNames", artist_out, artist_sz);
     if (!artist_out[0]) parse_artists_name(js, artist_out, artist_sz);
+    if (!artist_out[0]) parse_artist_by_key(js, "subtitle", artist_out, artist_sz);
     if (!artist_out[0]) strncpy(artist_out, "-", artist_sz - 1);
 }
 
@@ -589,14 +968,7 @@ static void display_loadingbar(bool visible, int percent)
     if (percent < 0) percent = 0;
     if (percent > 100) percent = 100;
 
-    if (objects.loadingbar) {
-        lv_arc_set_value(objects.loadingbar, percent);
-        if (visible) {
-            lv_obj_clear_flag(objects.loadingbar, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(objects.loadingbar, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
+    app_ui_set_loading_progress(visible, percent);
 
     lvgl_unlock();
 }
@@ -604,14 +976,7 @@ static void display_loadingbar(bool visible, int percent)
 static void display_loading_spinner(bool visible)
 {
     if (!lvgl_lock(200)) return;
-
-    if (objects.loading_spinner) {
-        if (visible) {
-            lv_obj_clear_flag(objects.loading_spinner, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(objects.loading_spinner, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
+    app_ui_set_loading_spinner_visible(visible);
 
     lvgl_unlock();
 }
@@ -743,9 +1108,38 @@ static void ytmd_task(void *arg)
     /* Main poll loop */
     while (1) {
         if (poll_ytmd()) {
+            s_last_elapsed_seconds = parse_elapsed_seconds(s_resp_buf);
+            int duration_seconds = parse_duration_seconds(s_resp_buf);
+            bool paused = false;
+            bool has_paused = parse_paused_state(s_resp_buf, &paused);
             int seek_pct = parse_seek_percent(s_resp_buf);
             if (seek_pct >= 0) {
-                display_seek_arc(seek_pct);
+                bool ignore_seek_spike = false;
+
+                if (s_last_seek_percent >= 0) {
+                    bool jumped_to_end = (seek_pct >= 100) && (s_last_seek_percent < 98);
+                    bool near_real_end = (duration_seconds > 0) &&
+                                         (s_last_elapsed_seconds >= 0) &&
+                                         (s_last_elapsed_seconds >= (duration_seconds - 2));
+
+                    if (jumped_to_end && !near_real_end) {
+                        ignore_seek_spike = true;
+                    }
+
+                    if (!ignore_seek_spike && has_paused && paused &&
+                        seek_pct > (s_last_seek_percent + 1)) {
+                        ignore_seek_spike = true;
+                    }
+                }
+
+                if (!ignore_seek_spike) {
+                    display_seek_arc(seek_pct);
+                    s_last_seek_percent = seek_pct;
+                } else {
+                    ESP_LOGW(TAG, "seek spike ignored prev=%d new=%d paused=%d elapsed=%d duration=%d",
+                             (int)s_last_seek_percent, seek_pct, has_paused ? (int)paused : -1,
+                             (int)s_last_elapsed_seconds, duration_seconds);
+                }
             }
 
             parse_song(s_resp_buf, new_id, sizeof(new_id), new_art, sizeof(new_art),
@@ -756,12 +1150,16 @@ static void ytmd_task(void *arg)
                 s_cur_title[sizeof(s_cur_title) - 1] = '\0';
                 strncpy(s_cur_artist, new_artist, sizeof(s_cur_artist) - 1);
                 s_cur_artist[sizeof(s_cur_artist) - 1] = '\0';
+                ESP_LOGI(TAG, "Meta title='%s' artist='%s'", s_cur_title, s_cur_artist);
                 display_song_meta(s_cur_title, s_cur_artist);
             }
 
             /* Song changed? */
             if (new_id[0] != '\0' && strcmp(new_id, s_cur_video_id) != 0) {
                 strncpy(s_cur_video_id, new_id, sizeof(s_cur_video_id) - 1);
+                s_cur_video_id[sizeof(s_cur_video_id) - 1] = '\0';
+                s_last_seek_percent = -1;
+                encoder_control_reset_counter();
                 ESP_LOGI(TAG, "Song: %s  art: %.80s", new_id, new_art);
 
                 if (new_art[0] != '\0' && download_art(new_art)) {
