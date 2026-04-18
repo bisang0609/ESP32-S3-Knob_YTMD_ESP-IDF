@@ -2,6 +2,8 @@ idf_component_register(
     SRCS
         "main.c"
         "wifi_sta_ui.c"
+        "ytmd_client.c"
+        "tjpgd.c"
         "ui/images.c"
         "ui/screens.c"
         "ui/styles.c"
@@ -14,6 +16,7 @@ idf_component_register(
         esp_driver_ledc
         esp_lcd
         esp_event
+        esp_http_client
         esp_netif
         esp_timer
         esp_wifi

@@ -8,6 +8,8 @@
 #include "styles.h"
 #include "ui.h"
 
+#include <string.h>
+
 objects_t objects;
 
 //
@@ -28,25 +30,47 @@ void create_screen_main() {
     {
         lv_obj_t *parent_obj = obj;
         {
+            // wifi_status
             lv_obj_t *obj = lv_label_create(parent_obj);
-            lv_obj_set_pos(obj, 140, 113);
-            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-            lv_label_set_text_static(obj, "WiFi: -");
             objects.wifi_status = obj;
+            lv_obj_set_pos(obj, 158, 8);
+            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_label_set_text_static(obj, "status");
         }
         {
+            // ip_address
             lv_obj_t *obj = lv_label_create(parent_obj);
-            lv_obj_set_pos(obj, 140, 148);
-            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-            lv_label_set_text_static(obj, "IP: -");
             objects.ip_address = obj;
+            lv_obj_set_pos(obj, 103, 33);
+            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_label_set_text_static(obj, "ip_address");
         }
         {
+            // Retry
             lv_obj_t *obj = lv_label_create(parent_obj);
-            lv_obj_set_pos(obj, 140, 183);
+            objects.retry = obj;
+            lv_obj_set_pos(obj, 219, 33);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-            lv_label_set_text_static(obj, "Retry: 0");
-            objects.Retry = obj;
+            lv_label_set_text_static(obj, "Retry");
+        }
+        {
+            lv_obj_t *obj = lv_obj_create(parent_obj);
+            lv_obj_set_pos(obj, 60, 60);
+            lv_obj_set_size(obj, 240, 240);
+            lv_obj_set_style_pad_left(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_pad_top(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_pad_right(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_pad_bottom(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_bg_opa(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_border_width(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_radius(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+        }
+        {
+            // album_art
+            lv_obj_t *obj = lv_img_create(parent_obj);
+            objects.album_art = obj;
+            lv_obj_set_pos(obj, 60, 60);
+            lv_obj_set_size(obj, 240, 240);
         }
     }
     

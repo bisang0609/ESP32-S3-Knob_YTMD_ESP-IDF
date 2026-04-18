@@ -19,7 +19,8 @@ typedef struct _objects_t {
     lv_obj_t *main;
     lv_obj_t *wifi_status;
     lv_obj_t *ip_address;
-    lv_obj_t *Retry;
+    lv_obj_t *retry;
+    lv_obj_t *album_art;
 } objects_t;
 
 extern objects_t objects;

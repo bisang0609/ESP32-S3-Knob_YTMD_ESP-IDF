@@ -21,6 +21,8 @@
 #include "user_config.h"
 #include "ui/ui.h"
 #include "wifi_sta_ui.h"
+#include "lvgl_lock.h"
+#include "ytmd_client.h"
 
 static const char *TAG = "main";
 static SemaphoreHandle_t lvgl_mux = NULL;
@@ -344,15 +346,14 @@ static void example_increase_lvgl_tick(void *arg)
     lv_tick_inc(EXAMPLE_LVGL_TICK_PERIOD_MS);
 }
 
-static bool example_lvgl_lock(int timeout_ms)
+bool lvgl_lock(int timeout_ms)
 {
     assert(lvgl_mux && "bsp_display_start must be called first");
-
     const TickType_t timeout_ticks = (timeout_ms == -1) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
     return xSemaphoreTake(lvgl_mux, timeout_ticks) == pdTRUE;
 }
 
-static void example_lvgl_unlock(void)
+void lvgl_unlock(void)
 {
     assert(lvgl_mux && "bsp_display_start must be called first");
     xSemaphoreGive(lvgl_mux);
@@ -364,10 +365,9 @@ static void example_lvgl_port_task(void *arg)
     uint32_t task_delay_ms = EXAMPLE_LVGL_TASK_MAX_DELAY_MS;
     while (1) {
         // Lock the mutex due to the LVGL APIs are not thread-safe
-        if (example_lvgl_lock(-1)) {
+        if (lvgl_lock(-1)) {
             task_delay_ms = lv_timer_handler();
-            // Release the mutex
-            example_lvgl_unlock();
+            lvgl_unlock();
         }
         if (task_delay_ms > EXAMPLE_LVGL_TASK_MAX_DELAY_MS) {
             task_delay_ms = EXAMPLE_LVGL_TASK_MAX_DELAY_MS;
@@ -406,12 +406,12 @@ static void ui_update_from_wifi(void)
         return;
     }
 
-    if (example_lvgl_lock(-1)) {
+    if (lvgl_lock(-1)) {
         ui_set_wifi_status_text(snapshot.wifi_status);
         ui_set_ip_address_text(snapshot.ip_address);
         ui_set_retry_count_text(snapshot.retry_count);
         ui_tick();
-        example_lvgl_unlock();
+        lvgl_unlock();
     }
 }
 
@@ -511,13 +511,14 @@ void app_main(void)
 
     ESP_LOGI(TAG, "Initialize UI screen");
     // Lock the mutex due to the LVGL APIs are not thread-safe
-    if (example_lvgl_lock(-1))
+    if (lvgl_lock(-1))
     {
         ui_init();
-        example_lvgl_unlock();
+        lvgl_unlock();
     }
 
     ESP_ERROR_CHECK(wifi_sta_ui_start());
+    ESP_ERROR_CHECK(ytmd_client_start());
 
     while (1) {
         ui_update_from_wifi();
