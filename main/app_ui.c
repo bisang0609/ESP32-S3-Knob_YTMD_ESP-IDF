@@ -12,7 +12,7 @@
 
 static lv_obj_t *s_spinner = NULL;
 static lv_obj_t *s_progress = NULL;
-static lv_obj_t *s_info_spinner = NULL;
+static lv_obj_t *s_info_progress = NULL;
 static lv_obj_t *s_info_bg_art = NULL;
 static lv_obj_t *s_bound_art2 = NULL;
 static lv_obj_t *s_bound_pause = NULL;
@@ -132,8 +132,8 @@ static void info_pause_click_cb(lv_event_t *e)
 static void hide_generated_loading_widgets(void)
 {
     if (is_valid_obj(objects.loadingbar)) {
-        lv_obj_set_style_arc_color(objects.loadingbar, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_arc_color(objects.loadingbar, lv_color_hex(0xFFFFFF), LV_PART_INDICATOR | LV_STATE_DEFAULT);
+        lv_obj_set_style_arc_color(objects.loadingbar, lv_color_hex(0x722F37), LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_arc_color(objects.loadingbar, lv_color_hex(0x722F37), LV_PART_INDICATOR | LV_STATE_DEFAULT);
         lv_obj_set_style_arc_opa(objects.loadingbar, LV_OPA_50, LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_style_arc_opa(objects.loadingbar, LV_OPA_COVER, LV_PART_INDICATOR | LV_STATE_DEFAULT);
         lv_obj_add_flag(objects.loadingbar, LV_OBJ_FLAG_HIDDEN);
@@ -159,8 +159,8 @@ static void create_overlays_if_needed(void)
         lv_obj_set_pos(s_spinner, 0, 0);
         lv_obj_set_size(s_spinner, 360, 360);
         lv_obj_clear_flag(s_spinner, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_style_arc_color(s_spinner, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_arc_color(s_spinner, lv_color_hex(0xFFFFFF), LV_PART_INDICATOR | LV_STATE_DEFAULT);
+        lv_obj_set_style_arc_color(s_spinner, lv_color_hex(0x722F37), LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_arc_color(s_spinner, lv_color_hex(0x722F37), LV_PART_INDICATOR | LV_STATE_DEFAULT);
         lv_obj_set_style_arc_opa(s_spinner, LV_OPA_50, LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_style_arc_opa(s_spinner, LV_OPA_COVER, LV_PART_INDICATOR | LV_STATE_DEFAULT);
         lv_obj_add_flag(s_spinner, LV_OBJ_FLAG_HIDDEN);
@@ -180,8 +180,8 @@ static void create_overlays_if_needed(void)
         lv_arc_set_bg_angles(s_progress, 0, 360);
         lv_obj_remove_style(s_progress, NULL, LV_PART_KNOB);
         lv_obj_clear_flag(s_progress, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_style_arc_color(s_progress, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_arc_color(s_progress, lv_color_hex(0xFFFFFF), LV_PART_INDICATOR | LV_STATE_DEFAULT);
+        lv_obj_set_style_arc_color(s_progress, lv_color_hex(0x722F37), LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_arc_color(s_progress, lv_color_hex(0x722F37), LV_PART_INDICATOR | LV_STATE_DEFAULT);
         lv_obj_set_style_arc_opa(s_progress, LV_OPA_50, LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_style_arc_opa(s_progress, LV_OPA_COVER, LV_PART_INDICATOR | LV_STATE_DEFAULT);
         lv_obj_set_style_arc_rounded(s_progress, false, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -208,30 +208,37 @@ static void create_overlays_if_needed(void)
     }
 
     if (is_valid_obj(objects.information) && is_valid_obj(objects.seek) &&
-        (!is_valid_obj(s_info_spinner) || lv_obj_get_parent(s_info_spinner) != objects.information)) {
-        if (is_valid_obj(s_info_spinner)) {
-            lv_obj_del(s_info_spinner);
+        (!is_valid_obj(s_info_progress) || lv_obj_get_parent(s_info_progress) != objects.information)) {
+        if (is_valid_obj(s_info_progress)) {
+            lv_obj_del(s_info_progress);
         }
 
-        s_info_spinner = lv_spinner_create(objects.information, 1000, 60);
-        lv_obj_clear_flag(s_info_spinner, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_style_arc_color(s_info_spinner, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_arc_color(s_info_spinner, lv_color_hex(0xFFFFFF), LV_PART_INDICATOR | LV_STATE_DEFAULT);
-        lv_obj_set_style_arc_opa(s_info_spinner, LV_OPA_50, LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_arc_opa(s_info_spinner, LV_OPA_COVER, LV_PART_INDICATOR | LV_STATE_DEFAULT);
-        lv_obj_add_flag(s_info_spinner, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_move_foreground(s_info_spinner);
+        s_info_progress = lv_arc_create(objects.information);
+        lv_arc_set_range(s_info_progress, 0, 100);
+        lv_arc_set_value(s_info_progress, 0);
+        lv_arc_set_rotation(s_info_progress, 270);
+        lv_arc_set_bg_angles(s_info_progress, 0, 360);
+        lv_obj_remove_style(s_info_progress, NULL, LV_PART_KNOB);
+        lv_obj_clear_flag(s_info_progress, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_style_arc_color(s_info_progress, lv_color_hex(0x722F37), LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_arc_color(s_info_progress, lv_color_hex(0x722F37), LV_PART_INDICATOR | LV_STATE_DEFAULT);
+        lv_obj_set_style_arc_opa(s_info_progress, LV_OPA_50, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_arc_opa(s_info_progress, LV_OPA_COVER, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+        lv_obj_set_style_arc_rounded(s_info_progress, false, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_arc_rounded(s_info_progress, false, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+        lv_obj_add_flag(s_info_progress, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(s_info_progress);
     }
 
-    if (is_valid_obj(s_info_spinner) && is_valid_obj(objects.seek)) {
+    if (is_valid_obj(s_info_progress) && is_valid_obj(objects.seek)) {
         int x = lv_obj_get_x(objects.seek);
         int y = lv_obj_get_y(objects.seek);
         int w = lv_obj_get_width(objects.seek);
         int h = lv_obj_get_height(objects.seek);
         if (w <= 0) w = 360;
         if (h <= 0) h = 360;
-        lv_obj_set_pos(s_info_spinner, x, y);
-        lv_obj_set_size(s_info_spinner, w, h);
+        lv_obj_set_pos(s_info_progress, x, y);
+        lv_obj_set_size(s_info_progress, w, h);
     }
 
     if (is_valid_obj(objects.seek)) {
@@ -285,7 +292,7 @@ void app_ui_init_runtime_overlays(void)
     hide_generated_loading_widgets();
     create_overlays_if_needed();
     if (is_valid_obj(objects.ap_status)) {
-        lv_label_set_text(objects.ap_status, "Find AP");
+        lv_label_set_text(objects.ap_status, "Searching for AP");
     }
     set_main_startup_widgets_visible(true);
 }
@@ -335,13 +342,14 @@ void app_ui_set_loading_progress(bool visible, int percent)
         lv_obj_add_flag(s_progress, LV_OBJ_FLAG_HIDDEN);
     }
 
-    if (is_valid_obj(s_info_spinner)) {
+    if (is_valid_obj(s_info_progress)) {
+        lv_arc_set_value(s_info_progress, percent);
         if (visible) {
-            lv_obj_clear_flag(s_info_spinner, LV_OBJ_FLAG_HIDDEN);
-            /* Keep info spinner above album art/art2 while loading */
-            lv_obj_move_foreground(s_info_spinner);
+            lv_obj_clear_flag(s_info_progress, LV_OBJ_FLAG_HIDDEN);
+            /* Keep info loading progress above album art/art2 while loading */
+            lv_obj_move_foreground(s_info_progress);
         } else {
-            lv_obj_add_flag(s_info_spinner, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(s_info_progress, LV_OBJ_FLAG_HIDDEN);
         }
     }
 

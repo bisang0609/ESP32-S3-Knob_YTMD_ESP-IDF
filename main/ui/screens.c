@@ -72,7 +72,7 @@ void create_screen_main() {
             objects.prg1 = obj;
             lv_obj_set_pos(obj, 108, 115);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-            lv_obj_set_style_text_font(obj, &lv_font_montserrat_14, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_font(obj, &lv_font_montserrat_48, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text_static(obj, "YTMD");
         }
         {
@@ -81,14 +81,16 @@ void create_screen_main() {
             objects.prg2 = obj;
             lv_obj_set_pos(obj, 93, 167);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-            lv_label_set_text_static(obj, "YouTube Music Desktop");
+            lv_label_set_text_static(obj, "Youtube Music Desktop");
         }
         {
             // ap_Status
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.ap_status = obj;
-            lv_obj_set_pos(obj, 137, 217);
-            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_obj_set_pos(obj, 26, 203);
+            lv_obj_set_size(obj, LV_PCT(86), LV_SIZE_CONTENT);
+            lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_font(obj, &lv_font_montserrat_18, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text_static(obj, "Connecting");
         }
     }
@@ -139,13 +141,12 @@ void create_screen_information() {
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.title = obj;
             lv_obj_set_pos(obj, 80, 242);
-            lv_obj_set_size(obj, 200, LV_SIZE_CONTENT);
+            lv_obj_set_size(obj, 200, 40);
             lv_label_set_long_mode(obj, LV_LABEL_LONG_SCROLL_CIRCULAR);
             lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_anim(obj, get_anim(), LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_anim_time(obj, 50000, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_anim_speed(obj, 20, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_text_font(obj, &lv_font_montserrat_14, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text_static(obj, "悪魔の子~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
         }
         {
@@ -153,7 +154,7 @@ void create_screen_information() {
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.artist = obj;
             lv_obj_set_pos(obj, 80, 273);
-            lv_obj_set_size(obj, 200, LV_SIZE_CONTENT);
+            lv_obj_set_size(obj, 200, 35);
             lv_label_set_long_mode(obj, LV_LABEL_LONG_SCROLL_CIRCULAR);
             lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_anim(obj, get_anim(), LV_PART_MAIN | LV_STATE_DEFAULT);

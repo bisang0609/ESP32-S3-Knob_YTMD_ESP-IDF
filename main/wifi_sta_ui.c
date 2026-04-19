@@ -89,11 +89,11 @@ static void start_connect_timer_cb(void *arg)
 {
     (void)arg;
 
-    state_set_status("Connecting");
+    state_set_status("Searching for AP");
     esp_err_t ret = esp_wifi_connect();
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "esp_wifi_connect failed from startup timer: %s", esp_err_to_name(ret));
-        state_set_status("Fail connect");
+        state_set_status("Searching for AP");
     }
 }
 
@@ -101,11 +101,11 @@ static void retry_connect_timer_cb(void *arg)
 {
     (void)arg;
 
-    state_set_status("Connecting");
+    state_set_status("Searching for AP");
     esp_err_t ret = esp_wifi_connect();
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "esp_wifi_connect failed from retry timer: %s", esp_err_to_name(ret));
-        state_set_status("Fail connect");
+        state_set_status("Searching for AP");
         schedule_retry_connect();
     }
 }
@@ -123,7 +123,7 @@ static void schedule_retry_connect(void)
     esp_err_t start_ret = esp_timer_start_once(s_retry_connect_timer, WIFI_RETRY_DELAY_US);
     if (start_ret != ESP_OK) {
         ESP_LOGW(TAG, "Retry timer start failed: %s", esp_err_to_name(start_ret));
-        state_set_status("Fail connect");
+        state_set_status("Searching for AP");
     }
 }
 
@@ -133,7 +133,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         ESP_LOGI(TAG, "Wi-Fi started. Delay 2.5s then connect.");
-        state_set_status("Find AP");
+        state_set_status("Searching for AP");
         state_set_ip("-");
         esp_err_t stop_ret = esp_timer_stop(s_start_connect_timer);
         if (stop_ret != ESP_OK && stop_ret != ESP_ERR_INVALID_STATE) {
@@ -142,14 +142,14 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         ESP_ERROR_CHECK(esp_timer_start_once(s_start_connect_timer, WIFI_START_CONNECT_DELAY_US));
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
         ESP_LOGI(TAG, "AP connected. Waiting DHCP.");
-        state_set_status("Connecting");
+        state_set_status("Waiting for DHCP response");
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         char ip_text[32];
 
         snprintf(ip_text, sizeof(ip_text), IPSTR, IP2STR(&event->ip_info.ip));
         state_set_ip(ip_text);
-        state_set_status("Connecting");
+        state_set_status("Displaying IP");
         esp_err_t stop_ret = esp_timer_stop(s_retry_connect_timer);
         if (stop_ret != ESP_OK && stop_ret != ESP_ERR_INVALID_STATE) {
             ESP_LOGW(TAG, "Retry timer stop failed: %s", esp_err_to_name(stop_ret));
@@ -159,7 +159,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         ESP_LOGW(TAG, "IP lost");
         state_inc_retry();
         state_set_ip("-");
-        state_set_status("Fail connect");
+        state_set_status("Searching for AP");
         schedule_retry_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t *disconnected = (wifi_event_sta_disconnected_t *)event_data;
@@ -169,7 +169,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
         state_lock();
         retry_snapshot = s_state.retry_count;
-        snprintf(s_state.wifi_status, sizeof(s_state.wifi_status), "%s", "Fail connect");
+        snprintf(s_state.wifi_status, sizeof(s_state.wifi_status), "%s", "Searching for AP");
         snprintf(s_state.ip_address, sizeof(s_state.ip_address), "-");
         s_state_dirty = true;
         state_unlock();
@@ -189,7 +189,7 @@ esp_err_t wifi_sta_ui_start(void)
     }
 
     state_lock();
-    state_set_locked("Find AP", "-", 0);
+    state_set_locked("Searching for AP", "-", 0);
     state_unlock();
 
     ESP_ERROR_CHECK(nvs_init_safe());

@@ -1124,13 +1124,14 @@ static void ytmd_task(void *arg)
     wait_for_ip();
     display_loading_spinner(false);
     ESP_LOGI(TAG, "IP ready. Connecting to YTMD at %s:%d ...", ytmd_target_ip(), YTMD_PORT);
+    display_main_startup_status("Searching for YTMD");
 
     /* Wait until YTMD server responds */
     while (!poll_ytmd()) {
         vTaskDelay(pdMS_TO_TICKS(CONNECT_RETRY_MS));
     }
     ESP_LOGI(TAG, "YTMD connected - system started");
-    display_main_startup_status("Album ART Loading");
+    display_main_startup_status("Loading album art");
 
     char new_id[64];
     char new_art[512];
